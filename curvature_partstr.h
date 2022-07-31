@@ -592,7 +592,7 @@ void DumpFacets(scalar vf, const char* filename) {
   int np = 0;
   int nx = 0;
 
-  foreach() {
+  foreach(serial) {
     if (interfacial (point, vf)) {
       coord m = Mycs(point, vf);
       double alpha = plane_alpha (vf[], m);
@@ -872,7 +872,7 @@ void DumpLines(
   int nx = 0;
   int np = 0;
 
-  foreach() {
+  foreach(serial) {
     if (interfacial(point, vf)) {
       const Trans b = GetPointTrans(point, vf, nn);
 

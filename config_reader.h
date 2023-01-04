@@ -2,6 +2,8 @@
 * CYAML schema to tell libcyaml about both expected YAML and data structure.
 *
 * (Our CYAML schema is just a bunch of static const data.)
+* to install CYAML: https://github.com/tlsa/libcyaml
+ * and https://github.com/tlsa/libcyaml
 ******************************************************************************/
 
 #pragma once
@@ -39,9 +41,9 @@ struct numbers {
 
 struct nondimensionalalized_vars {
     double domain_size;
-//    double characteristic_size;
-//    double Uin;
-//    double Tin;
+//    double characteristic_size; // = 1
+//    double Uin; // = 1
+//    double Tin; // = 1
     double T_solid;
     double Tam;
     double sigma_ndim;
@@ -72,6 +74,7 @@ struct nondimensionalalized_vars {
     int Ncx;
     int Ncy;
     int non_saturated;
+    int is_front;
 };
 
 // dimensional variables
@@ -214,6 +217,7 @@ static const cyaml_schema_field_t non_dimensional_fields[] = {
         CYAML_FIELD_INT("Ncx", CYAML_FLAG_OPTIONAL, struct nondimensionalalized_vars, Ncx),
         CYAML_FIELD_INT("Ncy", CYAML_FLAG_OPTIONAL, struct nondimensionalalized_vars, Ncy),
         CYAML_FIELD_INT("non_saturated", CYAML_FLAG_OPTIONAL, struct nondimensionalalized_vars, non_saturated),
+        CYAML_FIELD_INT("is_front", CYAML_FLAG_OPTIONAL, struct nondimensionalalized_vars, is_front),
         CYAML_FIELD_END
 };
 
@@ -389,6 +393,7 @@ struct input_yaml* read_config(int argc, char *argv[])
     if (!input->ndv.Ncx) ndv->Ncx = 0;
     if (!input->ndv.Ncy) ndv->Ncy = 0;
     if (!input->ndv.non_saturated) ndv->non_saturated = 0;
+    if (!input->ndv.is_front) ndv->is_front = 2;
 
 //    setting up default values for numerical simulation params
     if (!input->num_params.N_smooth) numpar->N_smooth = 1;
@@ -471,7 +476,7 @@ struct input_yaml* read_config(int argc, char *argv[])
     fprintf(fout, "ratio_Rbmin=%g ratio_Rbmax=%g\n", ndv->ratio_Rbmin, ndv->ratio_Rbmax);
     fprintf(fout, "cyl_x=%g shift_x=%g shift_y=%g\n", ndv->cyl_x, ndv->shift_x, ndv->shift_y);
     fprintf(fout, "dev_r=%g develx=%g devely=%g\n", ndv->dev_r, ndv->develx, ndv->devely);
-    fprintf(fout, "Nb=%d Ncx=%d Ncy=%d non_saturated=%d\n", ndv->Nb, ndv->Ncx, ndv->Ncy, ndv->non_saturated);
+    fprintf(fout, "Nb=%d Ncx=%d Ncy=%d non_saturated=%d is_front=%d\n", ndv->Nb, ndv->Ncx, ndv->Ncy, ndv->non_saturated, ndv->is_front);
 
     fprintf(fout, "%s============ Numerical simulation params ============\n%s", KRED, KNRM);
     fprintf(fout, "minlevel=%d LEVEL=%d maxlevel=%d\n", numpar->minlevel, numpar->LEVEL, numpar->maxlevel);
@@ -554,6 +559,7 @@ struct input_yaml* read_config_and_assign_global_vars(int argc, char *argv[])
     develx = input->ndv.develx;
     devely = input->ndv.devely;
     non_saturated = input->ndv.non_saturated;
+    is_front = input->ndv.is_front;
     Ncx = input->ndv.Ncx;
     Ncy = input->ndv.Ncy;
     Nb = input->ndv.Nb;

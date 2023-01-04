@@ -155,7 +155,8 @@ struct PVD_output {
 void output_htg(struct PVD_output o);
 
 #if _MPI
-void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File fp);
+typedef struct ompi_file_t *MPI_File1;
+void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File1 fp);
 #else
 void output_htg_data(scalar * list, vector * vlist, FILE * fp);
 #endif
@@ -175,7 +176,8 @@ void output_htg(struct PVD_output o) {
             mkdir(path, 0755);
         }
     }
-    MPI_File fp;
+
+    MPI_File1 fp;
 	int ec;
 	char htg_name[80];  	  
     sprintf(htg_name, "%s/%s_%06d.htg", path, prefix, iter_fp);
@@ -282,7 +284,7 @@ void output_htg(struct PVD_output o) {
   MPI_File_write(fp,&buffer, strlen(buffer), MPI_CHAR, MPI_STATUS_IGNORE); \
   } while(0)
   
-void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File fp)
+void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File1 fp)
 {
 	#if defined(_OPENMP)
 		int num_omp = omp_get_max_threads();
@@ -299,7 +301,7 @@ void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File fp)
 	    
 	for (int lvl = 0; lvl < grid->maxdepth+1; ++lvl){
     vertices_local_pL[lvl] = 0;
-		foreach_level(lvl,serial,noauto) 
+		foreach_level(lvl,serial)
 			if(is_local(cell)) 
 				vertices_local_pL[lvl]++;
     
@@ -314,8 +316,9 @@ void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File fp)
 #if HTG_SPEED_STATS
 	MPI_Barrier(MPI_COMM_WORLD);
 	double start = MPI_Wtime();
-#endif	
-  MPI_Offset offset = 0;
+#endif
+
+  int offset = 0;
 
 	int vertices_global_offset[grid->maxdepth+1];
   vertices_global_offset[0] = 0;
@@ -532,7 +535,7 @@ void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File fp)
 #endif
 
     Write2File(sprintf(buffer,"\t</HyperTreeGrid>\n\t<AppendedData encoding=\"raw\">\n_"));
-    MPI_Offset offset_tmp;
+    int offset_tmp;
     MPI_File_get_position(fp, &offset_tmp);
     offset += offset_tmp;    
 	} // end pid() == 0
@@ -548,13 +551,15 @@ void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File fp)
     cell_size=sizeof(u_int8_t);
     int vertices_local_pL_offset[grid->maxdepth+1];
     /** Create an array large enough to hold data + spacing between the levels */
-    long length_w_spacing = descBits_local + 7*(grid->maxdepth+1) + 8;    
+    long length_w_spacing = descBits_local + 7*(grid->maxdepth+1) + 8;
+    typedef unsigned char u_int8_t;
+    typedef unsigned int u_int32_t;
     u_int8_t* mask = (u_int8_t*)calloc( length_w_spacing, cell_size); //calloc needed?
     
     long index = 8; // start a 8
     for(int lvl=0; lvl < grid->maxdepth;++lvl) { // iterate through array and place lokal mask.
       vertices_local_pL_offset[lvl] = index;
-      foreach_level(lvl,serial,noauto) {
+      foreach_level(lvl,serial) {
         if (is_local(cell)) {
           mask[index++] = (u_int8_t)(!is_leaf(cell));
         }
@@ -790,7 +795,7 @@ void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File fp)
     
     long index = 0;   
     for(int lvl=0; lvl<=grid->maxdepth;++lvl)		
-      foreach_level(lvl,serial,noauto) 
+      foreach_level(lvl,serial)
         if (is_local(cell)) 
           level_struct.data[index++] = (u_int8_t)lvl;
                           
@@ -806,6 +811,7 @@ void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File fp)
   }
 #endif // end WRITE_HTG_LEVEL
   {
+    typedef unsigned int u_int32_t;
     struct scalar_t{
       u_int32_t size;
       float* data;
@@ -851,7 +857,7 @@ void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File fp)
     for (scalar s in list) {
       long index = 0;
       for(int lvl=0; lvl<=grid->maxdepth;++lvl)
-        foreach_level(lvl,serial,noauto)
+        foreach_level(lvl,serial)
           if (is_local(cell))
              scalar_struct.data[index++] = (float)val(s);
       
@@ -865,6 +871,7 @@ void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File fp)
     MPI_Type_free(&tree_type_scalar);  
   }   
   {
+    typedef unsigned int u_int32_t;
     struct vector_t{
       u_int32_t size;
       float* data;
@@ -910,7 +917,7 @@ void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File fp)
     for (vector v in vlist) {
       long index = 0;
         for(int lvl=0; lvl<=grid->maxdepth;++lvl)
-          foreach_level(lvl,serial,noauto) 
+          foreach_level(lvl,serial)
             if (is_local(cell)) {
               #if dimension == 2					
               vector_struct.data[index]   = (float)val(v.y);
@@ -968,7 +975,7 @@ void output_htg_data(scalar * list, vector * vlist, FILE * fp)
     
 	for (int lvl = 0; lvl < grid->maxdepth+1; ++lvl){
     vertices_local_pL[lvl] = 0;
-		foreach_level(lvl,serial,noauto) 
+		foreach_level(lvl,serial)
 			if(is_local(cell)) 
 				vertices_local_pL[lvl]++;
     
@@ -1193,13 +1200,14 @@ void output_htg_data(scalar * list, vector * vlist, FILE * fp)
 	cell_size=sizeof(u_int8_t);    
 	  
   int vertices_local_corr = ((descBits_local/8)+1)*8;
-
+  typedef unsigned int u_int32_t;
+  typedef unsigned short u_int8_t;
   u_int32_t prepend_size = vertices_local_corr;
   fwrite(&prepend_size, sizeof(u_int32_t), 1, fp); 		
   u_int8_t* write_cache = (u_int8_t*)calloc(vertices_local_corr,cell_size);
   long index = 1;
   for(int lvl=0; lvl<grid->maxdepth;++lvl){ // Bitmask ist "0" auf grid->maxdepth	und muss nicht geschrieben werden
-		foreach_level(lvl,serial,noauto)
+		foreach_level(lvl,serial)
 			if (is_local(cell)) {
 				if(is_leaf(cell)){					
 					write_cache[index++] = 0; // ascii: 0					
@@ -1234,7 +1242,7 @@ void output_htg_data(scalar * list, vector * vlist, FILE * fp)
 	for(int lvl=0; lvl<=grid->maxdepth;++lvl){
 		u_int8_t * write_cache = (u_int8_t*) malloc(vertices_local_pL[lvl]*sizeof(u_int8_t));
 		long index = 0;
-		foreach_level(lvl,serial,noauto)
+		foreach_level(lvl,serial)
 			if (is_local(cell))
 				write_cache[index++] = (u_int8_t)lvl;
 
@@ -1244,7 +1252,7 @@ void output_htg_data(scalar * list, vector * vlist, FILE * fp)
 	}
 	
 #endif // end WRITE_HTG_LEVEL
-  
+    typedef float float_t;
 	for (scalar s in list) {
 		cell_size=sizeof(float_t);
 		  
@@ -1257,7 +1265,7 @@ void output_htg_data(scalar * list, vector * vlist, FILE * fp)
 			float_t * write_cache = (float_t*) malloc(vertices_local_pL[lvl]*cell_size);
 			long index = 0;
       
-			foreach_level(lvl,serial,noauto)
+			foreach_level(lvl,serial)
 				if (is_local(cell)) 			
 					write_cache[index++] = val(s);
 			
@@ -1266,7 +1274,7 @@ void output_htg_data(scalar * list, vector * vlist, FILE * fp)
 			write_cache = NULL;	        
     }
   }
-  
+
 	for (vector v in vlist) {
 		cell_size = 3*sizeof(float_t);
 		
@@ -1277,7 +1285,7 @@ void output_htg_data(scalar * list, vector * vlist, FILE * fp)
 			
 			float_t * write_cache = (float_t*) malloc(vertices_local_pL[lvl]*cell_size);
 			long index = 0;
-			foreach_level(lvl,serial,noauto)
+			foreach_level(lvl,serial)
 				if (is_local(cell)) {
 					#if dimension == 2
 			

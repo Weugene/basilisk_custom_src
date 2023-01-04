@@ -571,7 +571,7 @@ void DumpCsv(const char* filename) {
 // vf: volume fraction
 static int GetNcInter(scalar vf) {
   int nc = 0;
-  foreach () {
+  foreach (reduction(+:nc)) {
     if (interfacial(point, vf)) {
       ++nc;
     }
@@ -958,16 +958,16 @@ trace cstats curvature_partstr(struct Curvature p) {
 
   foreach (reduction(+:sh) reduction(+:sc)) {
     if (!interfacial(point, c)) {
-      k[] = nodata; which_meth[] = 0;
+      k[] = nodata;
     } else if (
         !conf->nohf && (k[] = height_curvature(point, c, h)) != nodata) {
-      sh++; which_meth[] = 1;
+      sh++;
     } else {
       k[] = partstr_curvature(point, c, nn, conf);
-      sc++; which_meth[] = 2;
+      sc++;
     }
   }
-  boundary({k, which_meth});
+  boundary({k});
 
   foreach () {
     double kf = k[];

@@ -82,7 +82,7 @@ for which inertia is negligible compared to viscosity.
 If *chorin_modified* is *true*, then Chorin's correction step considers solids.
 */
 
-(const) face vector mu = zerof, a = zerof, alpha = unityf, kappa = zerof, alpham = unityf;
+(const) face vector mu = zerof, a = zerof, alpha = unityf, alpham = unityf;
 (const) scalar rho = unity;
 mgstats mgp = {0}, mgpf = {0}, mgu = {0};
 bool stokes = false;
@@ -238,7 +238,6 @@ event set_dtmax (i++,last) dtmax = DT;
 event stability (i++,last) {
     dt = dtnext (stokes ? dtmax : timestep (uf, dtmax));
     fprintf(ferr, "TIME hydrodynamics: t=%g tnext=%g dt=%g DT=%g dtmax=%g stokes=%d\n", t, tnext, dt, DT, dtmax, stokes );
-
 }
 
 /**
@@ -265,7 +264,7 @@ event tracer_diffusion (i++,last);
 
 /**
 The fluid properties such as density ($\rho$), specific volume (fields $\alpha$ and
-$\alpha_c$), dynamic viscosity (face field $\mu_f$) or heat conductivity ($\kappa$) -- at time
+$\alpha_c$) or dynamic viscosity (face field $\mu_f$) -- at time
 $t+\Delta t/2$ -- can be defined by overloading this event. */
 event properties (i++,last);
 
@@ -340,26 +339,14 @@ We predict the face velocity field $\mathbf{u}_f$ at time $t+\Delta t/2$
 then project it to make it divergence-free. We can then use it to
 compute the velocity advection term, using the standard
 Bell-Collela-Glaz advection scheme for each component of the velocity
-field. If `HEAT_TRANSFER` is defined then temperature $T$ is advected jointly with velocity, additionally,
-if  `REACTION_MODEL` specifies a chemical model, then degree of cure $\alpha_{doc}$ is advected.
-*/
+field. */
 
 event advection_term (i++,last)
 {
-  if (!stokes || !stokes_heat) {
+  if (!stokes) {
     prediction();
     mgpf = project (uf, pf, alpham, dt/2., mgpf.nrelax);
-#ifndef HEAT_TRANSFER
-      advection ((scalar *){u}, uf, dt, (scalar *){g}); // original version
-#else
-    #if REACTION_MODEL == NO_REACTION_MODEL
-    if (!stokes_heat)
-      advection ((scalar *){u, T}, uf, dt, (scalar *){g, zeroc}); // original version
-    #else
-    if (!stokes_heat)
-      advection ((scalar *){u, T, alpha_doc}, uf, dt, (scalar *){g, zeroc, zeroc}); // original version
-    #endif
-#endif
+    advection ((scalar *){u}, uf, dt, (scalar *){g}); // original version
   }
 }
 

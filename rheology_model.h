@@ -22,6 +22,7 @@ double Ea_by_R = 5;// Kelvin
 double n_degree = 1.667;
 double m_degree = 0.333;
 bool viscDissipation = false;
+bool stokes_heat = false; // If *stokes_heat* is set to *true*, the advection term in heat equation $(\mathbf{u}\cdot\nabla)T$ is omitted.
 #undef SEPS
 #define SEPS 1e-10
 
@@ -76,7 +77,13 @@ bool viscDissipation = false;
  * r = \rho_1 Q A (1-\alpha^n)^{n_degree} \exp(-\frac{E_a}{RT^n})(1 - \frac{E_a}{RT^n}) + \frac{\rho C_p \chi T_0}{\eta_T}
  */
 
+event stability (i++,last) {
+    dt = dtnext (stokes_heat ? dtmax : timestep (uf, dtmax));
+    fprintf(ferr, "TIME heat advection: t=%g tnext=%g dt=%g DT=%g dtmax=%g stokes_heat=%d\n",
+            t, tnext, dt, DT, dtmax, stokes_heat );
+}
 
+// TODO: move to `chem_advection_term`?
 #if REACTION_MODEL != NO_REACTION_MODEL //  POLYMERIZATION_REACTION
 event vof (i++){
     if (!stokes_heat) {
@@ -88,6 +95,22 @@ event vof (i++){
 event chem_advection_term (i++){
     if (!stokes_heat) {
         advection((scalar *) {T}, uf, dt);
+    }
+}
+
+
+event advection_term (i++,last)
+{
+    if (!stokes || !stokes_heat) {
+        prediction();
+        mgpf = project (uf, pf, alpham, dt/2., mgpf.nrelax);
+#if REACTION_MODEL == NO_REACTION_MODEL
+        if (!stokes_heat)
+      advection ((scalar *){u, T}, uf, dt, (scalar *){g, zeroc}); // original version
+#else
+        if (!stokes_heat)
+            advection ((scalar *){u, T, alpha_doc}, uf, dt, (scalar *){g, zeroc, zeroc}); // original version
+#endif
     }
 }
 

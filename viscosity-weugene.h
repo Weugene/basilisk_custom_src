@@ -1,5 +1,4 @@
 #include "penalization.h" // added by Weugene 3/12/20 at 11:55
-//#include "poisson.h"
 #include "poisson-weugene.h" // added by Weugene 3/12/20 at 11:55
 
 struct Viscosity {
@@ -16,6 +15,7 @@ struct Viscosity {
 #define SEPS 1e-12
 bool relative_residual_viscous = false;
 
+// frhs defined in penalization.h as 1 or (1 - fs)
 #if AXI
 #define lambda ((coord){1., 1. + frhs*dt/rho[]*(mu.x[] + mu.x[1] + \
                                 mu.y[] + mu.y[0,1])/2./sq(y)})
@@ -37,6 +37,7 @@ bool relative_residual_viscous = false;
     #define scalar_a_by_b(a, b) (a.x[]*b.x[] + a.y[]*b.y[] + a.z[]*b.z[])
 #endif
 
+// a * (grad b) (2*Delta)
 #if dimension == 1
     #define m_scalar_a_by_b(a, b) (a.x[]*(b[1] - b[-1]))
 #elif dimension == 2
@@ -113,8 +114,7 @@ static void relax_viscosity (scalar*a, scalar*b, int l, void*data)
 }
 
 //here r is u^n, u is u^{n+1}. u is not an error, it is actual velocity
-    static double residual_viscosity (scalar * a, scalar * b, scalar * resl,
-                                      void * data)
+static double residual_viscosity (scalar * a, scalar * b, scalar * resl, void * data)
 {
     struct Viscosity * p = (struct Viscosity *) data;
     (const) face vector mu = p->mu;
@@ -122,6 +122,14 @@ static void relax_viscosity (scalar*a, scalar*b, int l, void*data)
     double dt = p->dt;
     vector u = vector(a[0]), r = vector(b[0]), res = vector(resl[0]);
     double maxres = 0, maxb = p->maxb;
+    /* conservative coarse/fine discretisation (2nd order) */
+
+    /**
+    We manually apply boundary conditions, so that all components are
+    treated simultaneously. Otherwise (automatic) BCs would be applied
+    component by component before each foreach_face() loop. */
+
+    boundary ({u});
 
     #ifndef DEBUG_BRINKMAN_PENALIZATION
     vector divtauu[];// added: Weugene
@@ -146,7 +154,7 @@ static void relax_viscosity (scalar*a, scalar*b, int l, void*data)
                      (u.z[-1,0,-1] + u.z[-1,0,0])/4.)/Delta;
 #endif
         foreach() {
-            double d = 0.0;
+            double d = 0.;
             foreach_dimension() {
                 d += taux.x[1] - taux.x[];
             }
@@ -164,7 +172,7 @@ static void relax_viscosity (scalar*a, scalar*b, int l, void*data)
         foreach_dimension(){
             LU.x = lambda.x*u.x[] - frhs*divtauu.x[]*dt/rho[]
                      -(PLUS_VARIABLE_BRINKMAN_RHS)*dt;
-            res.x[] = r.x[] - LU.x;
+            res.x[] = r.x[] - LU.x; // res = b - Lu
             if (fabs (res.x[]) > maxres) maxres = fabs (res.x[]);
 #ifdef DEBUG_BRINKMAN_PENALIZATION
             dbp.x[] = PLUS_BRINKMAN_RHS;
@@ -176,7 +184,6 @@ static void relax_viscosity (scalar*a, scalar*b, int l, void*data)
 #ifdef DEBUG_BRINKMAN_PENALIZATION
     fprintf(ferr, "visc: maxres=%15.12g maxb=%15.12g maxres/maxb=%15.12g\n", maxres, maxb, maxres/maxb);
 #endif
-//    event("vtk_file");
     return maxres/maxb; // Corrected by Weugene: return residual = rhs - du/dt
 }
 
@@ -211,7 +218,7 @@ mgstats viscosity (struct Viscosity p)
         p.maxb = 1;
     }
 #ifdef DEBUG_BRINKMAN_PENALIZATION
-    fprintf(ferr, "maxb = %g\n", p.maxb);
+    fprintf(ferr, "visc max|RHS| = %g\n", p.maxb);
 #endif
     return mg_solve ((scalar *){u}, (scalar *){r},
                      residual_viscosity, relax_viscosity, &p, p.nrelax, p.res);

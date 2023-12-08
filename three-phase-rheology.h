@@ -199,7 +199,7 @@ event properties (i++) {
 #endif
     }
     foreach()
-        rhov[] = cm[]*rho(sf1[], sf2[]); //? alphav.x and rhov are not consistent - All do so
+        rhov[] = cm[]*rho(sf1[], sf2[]); // TODO: ? alphav.x and rhov are not consistent - All do so
 #if TREE
     sf1.prolongation = fraction_refine; //after changing we restore prolongation operator
     sf2.prolongation = fraction_refine;

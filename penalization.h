@@ -1,6 +1,5 @@
 const vector zerocf[] = {0.,0.,0.};
 #ifdef BRINKMAN_PENALIZATION
-    #define frhs (1)
     #define fbp (fs[])
     extern scalar fs;
     extern face vector fs_face;
@@ -54,7 +53,6 @@ const vector zerocf[] = {0.,0.,0.};
         double gradun;
     #endif
 #else
-    #define frhs 1
     #define fbp 0
     double gradun;
     #define PLUS_CONSTANT_BRINKMAN_RHS  0

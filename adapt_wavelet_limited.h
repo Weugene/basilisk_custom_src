@@ -1,18 +1,14 @@
 /**
- 
- 
- an adaptation by [Cesar Pairetti](http://basilisk.fr/sandbox/pairetti/) of his
+Modified adapt_wavelet to support MAXLEVEL limited by regions.
+The input structure has now a function MLFun that defines MAXLEVEL from cell space location.
+
+An adaptation by [Cesar Pairetti](http://basilisk.fr/sandbox/pairetti/) of his
  [http://basilisk.fr/sandbox/pairetti/bag_mode/adapt_wavelet_limited.h]()
  is used here.
- 
- As Stephane says: "Ideally, automatic adaptation using only error control (i.e. cmax in adapt_wavelet) should be more reliable and less susceptible to "user error". I know of many examples where the adaptation functions in Gerris have been abused in this way, leading to erroneous simulations. So, hand-tuning should only be used as a last resort."
- 
- 
- 
- 
- 
-*/
 
+ As Stephane says: "Ideally, automatic adaptation using only error control (i.e. cmax in adapt_wavelet) should be more reliable and less susceptible to "user error". I know of many examples where the adaptation functions in Gerris have been abused in this way, leading to erroneous simulations. So, hand-tuning should only be used as a last resort."
+
+*/
 #define TREE 1
 
 struct Adapt_limited {
@@ -23,7 +19,6 @@ struct Adapt_limited {
   scalar * list;  // list of fields to update (default all)
 };
 
-trace
 astats adapt_wavelet_limited (struct Adapt_limited p)
 {
   scalar * listcm = NULL;
@@ -48,7 +43,7 @@ astats adapt_wavelet_limited (struct Adapt_limited p)
   astats st = {0, 0};
   scalar * listc = NULL;
   for (scalar s in p.list)
-    if (!is_constant(s) && s.restriction != no_restriction)
+    if (!is_constant(s) && s.coarsen != no_coarsen)
       listc = list_add (listc, s);
 
   // refinement
@@ -56,6 +51,8 @@ astats adapt_wavelet_limited (struct Adapt_limited p)
     p.minlevel = 1;
   tree->refined.n = 0;
   static const int refined = 1 << user, too_fine = 1 << (user + 1);
+  /**
+  Each cell will refine up to the allowed cellMAX value.  */
   foreach_cell() {
     int cellMAX = p.MLFun(x,y,z); 
     if (is_active(cell)) {
@@ -78,10 +75,8 @@ astats adapt_wavelet_limited (struct Adapt_limited p)
 	bool local = is_local(cell);
 	if (!local)
 	  foreach_child()
-	    if (is_local(cell)){
-	      local = true;
-	      break;
-	    }
+	    if (is_local(cell))
+	      local = true, break;
 	if (local) {
 	  int i = 0;
 	  static const int just_fine = 1 << (user + 3);
@@ -165,5 +160,3 @@ astats adapt_wavelet_limited (struct Adapt_limited p)
   
   return st;
 }
-
-

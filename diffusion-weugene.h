@@ -37,24 +37,18 @@ Note that the `r`, $\beta$ and $\theta$ fields will be modified by the solver.
 
 The function returns the statistics of the Poisson solver. */
 
-struct Diffusion {
-  // mandatory
-  scalar f;
-  double dt;
-  // optional
-  face vector D;  // default 1
-  scalar r, beta; // default 0
-  scalar theta;   // default 1
-};
-
 trace
-mgstats diffusion (struct Diffusion p)
+mgstats diffusion (scalar f, double dt,
+		   face vector D = {{-1}},  // default 1
+		   scalar r = {-1},         // default 0
+		   scalar beta = {-1},      // default 0
+		   scalar theta = {-1})     // default 1
 {
 
   /**
   If *dt* is zero we don't do anything. */
 
-  if (p.dt == 0.) {
+  if (dt == 0.) {
     mgstats s = {0};
     return s;
   }
@@ -62,36 +56,33 @@ mgstats diffusion (struct Diffusion p)
   /**
   We define $f$ and $r$ for convenience. */
 
-  scalar f = p.f, r = automatic (p.r);
+  scalar ar = automatic (r);
 
   /**
   We define a (possibly constant) field equal to $\theta/dt$. */
 
-  const scalar idt[] = - 1./p.dt;
-  (const) scalar theta_idt = p.theta.i ? p.theta : idt;
+  const scalar idt[] = - 1./dt;
+  (const) scalar theta_idt = theta.i >= 0 ? theta : idt;
   
-  if (p.theta.i) {
-    scalar theta_idt = p.theta;
+  if (theta.i >= 0)
     foreach()
-      theta_idt[] *= idt[];
-  }
+      theta[] *= idt[];
 
   /**
   We use `r` to store the r.h.s. of the Poisson--Helmholtz solver. */
 
-  if (p.r.i)
+  if (r.i >= 0)
     foreach()
-      r[] = theta_idt[]*f[] - r[];
+      ar[] = theta_idt[]*f[] - ar[];
   else // r was not passed by the user
     foreach()
-      r[] = theta_idt[]*f[];
+      ar[] = theta_idt[]*f[];
 
   /**
   If $\beta$ is provided, we use it to store the diagonal term $\lambda$. */
 
   scalar lambda = theta_idt;
-  if (p.beta.i) {
-    scalar beta = p.beta;
+  if (beta.i >= 0) {
     foreach()
       beta[] += theta_idt[];
     lambda = beta;
@@ -100,5 +91,5 @@ mgstats diffusion (struct Diffusion p)
   /**
   Finally we solve the system. */
 
-  return poisson (f, r, p.D, lambda);
+  return poisson (f, ar, D, lambda);
 }

@@ -82,8 +82,8 @@ for which inertia is negligible compared to viscosity.
 If *chorin_modified* is *true*, then Chorin's correction step considers solids.
 */
 
-(const) face vector mu = zerof, a = zerof, alpha = unityf, alpham = unityf;
-(const) scalar rho = unity;
+(const) face vector mu = zerof, a = zerof, alpha = unityf, kappa = zerof, alpham = unityf;
+(const) scalar rho = unity, rhoCp = unity;
 mgstats mgp = {0}, mgpf = {0}, mgu = {0};
 bool stokes = false;
 bool chorin_modified = false;
@@ -149,7 +149,8 @@ event defaults (i = 0)
   p.nodump = pf.nodump = true;
 
   /**
-  The default density field is set to unity (times the metric). */
+  The default density field is set to unity (times the metric and the
+  solid factors). */
 
   if (alpha.x.i == unityf.x.i) {
     alpha = fm;
@@ -161,9 +162,7 @@ event defaults (i = 0)
     face vector alphamv = alpham;
     foreach_face(){
       alphav.x[] = fm.x[];
-      if (chorin_modified){
-        alphamv.x[] = fm.x[];
-      }
+      alphamv.x[] = fm.x[];
     }
   }
   if (!chorin_modified)
@@ -192,6 +191,13 @@ event defaults (i = 0)
     s.embed_gradient = pressure_embed_gradient;
 #endif // EMBED
 #endif // TREE
+
+  /**
+  We set the dimensions of the velocity field. */
+
+  foreach()
+    foreach_dimension()
+      dimensional (u.x[] == Delta/t);
 }
 
 
@@ -224,6 +230,13 @@ event init (i = 0)
 
   dtmax = DT;
   event ("stability");
+
+}
+
+/**
+After initialization of all initial variables, we output file */
+event vtk_file_initial (i = 0) {
+    event("vtk_file");
 }
 
 /**
@@ -254,7 +267,7 @@ event uf_correction(i++, last){
 Compute $\partial_tc_i + \mathbf{u}_f\cdot\nabla c_i = 0$
 The list of volume fraction fields `interfaces` are advected based on face velocity $\mathbf{u}_f$
  */
- // TODO: should we add here alpha_doc, T into interface????
+
 event vof (i++,last);
 /**
 Calculate fields for smearing sf1[], sf2[], if FILTERED is set
@@ -264,8 +277,9 @@ event tracer_diffusion (i++,last);
 
 /**
 The fluid properties such as density ($\rho$), specific volume (fields $\alpha$ and
-$\alpha_c$) or dynamic viscosity (face field $\mu_f$) -- at time
+$\alpha_c$), dynamic viscosity (face field $\mu_f$) or heat conductivity ($\kappa$) -- at time
 $t+\Delta t/2$ -- can be defined by overloading this event. */
+
 event properties (i++,last);
 
 /**
@@ -349,7 +363,14 @@ event advection_term (i++,last)
     advection ((scalar *){u}, uf, dt, (scalar *){g}); // original version
   }
 }
-
+/**
+ *  Advection of the temperature and polymerization fields
+ */
+event chem_advection_term (i++, last);
+/**
+ *  Heat conductivity and chemical reactions of polymerization:
+ */
+event chem_conductivity_term (i++, last);
 /**
 ### Viscous term
 

@@ -6,8 +6,7 @@ see [output_htg.h](output_htg.h) on how to use this code
 */
 
 #if _MPI
-typedef struct ompi_file_t *MPI_File2;
-void output_pvd_mpiio(char* name, double t, MPI_File2 fp, bool firstTimeWritten){
+void output_pvd_mpiio(char* name, double t, MPI_File fp, bool firstTimeWritten){
 	char head[] ="<VTKFile type=\"Collection\" version=\"0.1\" byte_order=\"LittleEndian\">\n\t<Collection>\n";
 	char tail[] = "\t</Collection>\n</VTKFile>\n";
 	

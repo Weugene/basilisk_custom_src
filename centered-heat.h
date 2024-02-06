@@ -45,6 +45,7 @@ Detailed information about comparison you can find here.
 #include "utils-weugene.h"
 #endif
 #endif
+#include "rheology_model.h"
 
 /**
 The primary variables are the centered pressure field $p$ and the

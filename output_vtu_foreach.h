@@ -606,12 +606,8 @@ struct PVD_output {
 struct stat st = {0};
 static int iter_fp=0;
 static float file_timesteps[9999];
-void output_vtu_MPI(struct PVD_output o){
-    scalar * list = o.list;
-    vector * vlist = o.vlist;
-    vector * fvlist = o.fvlist;
-    char * subname = o.subname;
-    double myt = fabs(o.myt);
+void output_vtu_MPI(char * subname, double myt, scalar * list = NULL, vector * vlist = NULL, vector * fvlist = NULL){
+    myt = fabs(myt);
     int nf = iter_fp;
     char name_vtu[1000];
     if (iter_fp == 0) {

@@ -6,7 +6,7 @@ This field enables the export of  AMR-meshes  into the HyperTreeGrid Dataformat.
 It works on Quad-/Octrees with and without MPI. 
 The HTG file format is still under development so compatibility with future Paraview versions 
 might be limited. Advantage of the HTG file format is the ~7x smaller size due to implicit point location.
-The data is stored under the `path` variable, a time series can be opend
+The data is stored under the `path` variable, a time series can be opened
 using the corresponding collection file (.pvd) with name "output_<path>.pvd"
 
 
@@ -33,8 +33,8 @@ Be sure to used the updated, MPI_IO compatible `output_pvd.h`!
 ## Flags ##
     #define HEADER_MIN_MAX_VAL 1
 If this flag is set the corresponding min/max values for each values are included
-in the header. This is probably not needed, the adavantage is unknown. 
-It probably increases the posprocessing speed.
+in the header. This is probably not needed, the advantage is unknown.
+It probably increases the postprocessing speed.
 Defaults to 1 (true).
 
     #define WRITE_HTG_LEVEL 1
@@ -60,11 +60,11 @@ Defaults to 10 (VTKFile version 1.0)
 The mapping of the Basilisk internal tree structure to the HyperTreeGrid
 structure is not trivial. The HTG structure is defined level wise. Multiple processors
 can write a single tree, if each processes writes its cells level wise after those from
-the preceeding process. The offsets and cells per level have to recalculated every 
+the preceding process. The offsets and cells per level have to recalculated every
 output step.
 These offsets and cells per level are used to create a derived datatype (MPI_Type_indexed).
-Each process copys the values of all its nodes into a continous array. The MPI_Type_indexed 
-datatype allows to write this continous array as a correclty spaced array to the file, which 
+Each process copies the values of all its nodes into a continuous array. The MPI_Type_indexed
+datatype allows to write this continuous array as a correctly spaced array to the file, which
 allows other processes to write their data in the spaces left.
 The HyperTreeGrid further needs the size of the following data in bytes in addition to the actual data.
 
@@ -74,7 +74,7 @@ The HyperTreeGrid further needs the size of the following data in bytes in addit
 
 It is therefore  convenient to define a struct consisting of the an integer with the 
 blob size and the array of the data to write. This can be done using an MPI_Type_struct
-datatype. While the struct contains the interger and a pointer to a continous space in
+datatype. While the struct contains the integer and a pointer to a continuous space in
 memory the data on the file will be the integer followed by the correctly spaced MPI_Type_indexed.
 
 This enables using MPI_File_set_view and MPI_File_write_all (collective operation) for good
@@ -84,8 +84,8 @@ The header and the tail is written only by process 0.
 
 The actual tree structure of the HTG ist defined using a bitmask. If a node has children
 its value is 1, else it is 0. This is done level wise as well. On the next level the value
-of each (still existing) node is described using 1 (is refined/has childen) or 0 
-(not refined/ does not have childen) as well. This is repeated for each level except 
+of each (still existing) node is described using 1 (is refined/has children) or 0
+(not refined/ does not have children) as well. This is repeated for each level except
 the last level because these values are all 0 due to being the last level and are neglected.
 
 The problem arises when storing this bitmask, as it is only possible the write a byte (8 bits).
@@ -94,7 +94,7 @@ in the bitmask appear which are not allowed. This problem arises immediately at 
 as process 0 has one 1 bit (level zero has children), but writing  a `1000 0000` byte is wrong
 as it already describes the values of the 7 following nodes as well, whose values are unknown to
 process 0.
-Therefore the describtor bits (stored as bytes (u_int8_t) in memory)  have to be moved to the next
+Therefore the descriptor bits (stored as bytes (u_int8_t) in memory)  have to be moved to the next
 process (or level) until a number divisible by 8 is resident on the process. A 'wave' of excess 
 descriptor bytes is swept through all processes and levels til the last process of the last level
 who fills the missing bytes with 0.
@@ -104,9 +104,9 @@ To allow this moving of upto 7 bytes a special array structure is chosen:
  |8_empty_byt|descr_byt_lvl0|7_empty_byt|descr_byt_lvl1|...|7_empty_byt|
  0           8              
 
-Each process has to space to accommodate upto 7 bytes from the preceeding process/level
+Each process has to space to accommodate upto 7 bytes from the preceding process/level
 infront of the own descriptor bytes. Each process keeps track of how many bytes to send/
-to recv/ and stay on a level and on which index the level begins taking the recvieved 
+to recv/ and stay on a level and on which index the level begins taking the received
 bytes into account. 
 After this every process has a number of descriptor bytes that can be transformed into
 descriptor bits. This is actually done in the same array starting a index 0 which is guaranteed
@@ -116,9 +116,9 @@ With information about offset and length again a MPI_Type_indexed and a MPI_Type
 can be defined. This again is used to write the bitmask in a collective operation.
 
 ## Detail of the serial implementation ##
-Each process caches the data on each level in a contingues array which is written
-to disk sequentially with only one fwrite() funtion call.
-The Bitmask is written in "appened" mode as well resulting in an uncluttered file
+Each process caches the data on each level in a continues array which is written
+to disk sequentially with only one fwrite() function call.
+The Bitmask is written in "append" mode as well resulting in an uncluttered file
  */ 
 
 //~ #define HEADER_MIN_MAX_VAL 0
@@ -138,50 +138,39 @@ The Bitmask is written in "appened" mode as well resulting in an uncluttered fil
 #ifndef VTK_FILE_VERSION
 #define VTK_FILE_VERSION 10 // 1.0
 #endif
-#include <sys/types.h>
-#include <sys/stat.h>
+#include <sys/types.h> // necessary to create directories
+#include <sys/stat.h> // check if a path exists
 #include <unistd.h>
 struct stat st = {0};
-static int iter_fp = 0;
-static float file_timesteps[9999];
-struct PVD_output {
-    char * path;
-    char * prefix;
-    double myt;
-    scalar * list;
-    vector * vlist;
-    vector * fvlist;
-};
-void output_htg(struct PVD_output o);
 
+void output_htg(scalar * list, vector * vlist, vector * fvlist, const char* path, char* prefix, int iter_fp, double t);
+
+//void restore_filetimesteps
 #if _MPI
-typedef struct ompi_file_t *MPI_File1;
-void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File1 fp);
+void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File fp);
 #else
 void output_htg_data(scalar * list, vector * vlist, FILE * fp);
 #endif
- 
-#if _MPI
-void output_htg(struct PVD_output o) {
-    scalar * list = o.list;
-    vector * vlist = o.vlist;
-    char * path = o.path;
-    char * prefix = o.prefix;
-    double t = fabs(o.myt);
 
-    int nf = iter_fp;
-    file_timesteps[nf] = t;
+#if _MPI
+void output_htg(scalar * list, vector * vlist, vector * fvlist, const char* path, char* prefix, int iter_fp, double t) {
+//    static int iter_fp = 0; // write file iteration, other than `i`
+//    static float file_timesteps[9999];
+//    file_timesteps[iter_fp] = t;
     if (iter_fp == 0 && pid() == 0) {
+        // check if a path exists
         if (stat(path, &st) == -1) {
+            // create if not exist
             mkdir(path, 0755);
         }
     }
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_File fp;
 
-    MPI_File1 fp;
 	int ec;
 	char htg_name[80];  	  
-    sprintf(htg_name, "%s/%s_%06d.htg", path, prefix, iter_fp);
-    fprintf(ferr, "htg_name=%s\n", htg_name);
+	sprintf(htg_name, "%s/%s.htg", path, prefix);
+
 	ec = MPI_File_open(MPI_COMM_WORLD, htg_name, \
 		MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &fp);
   // Overwrite File 
@@ -224,30 +213,23 @@ void output_htg(struct PVD_output o) {
 	}	
 	MPI_Barrier(MPI_COMM_WORLD);
 #ifdef DEBUG_OUTPUT_VTU_MPI
-    fprintf (ferr, "iter_fp: %d t=%g dt=%g\n", nf, t, dt);
+    fprintf (ferr, "output_htg: iter_fp=%d t=%g dt=%g\n", iter_fp, t, dt);
 #endif
-    iter_fp++;
 }
 
 #else // no MPI
-void output_htg(struct PVD_output o) {
-    scalar * list = o.list;
-    vector * vlist = o.vlist;
-    char * path = o.path;
-    char * prefix = o.prefix;
-    double t = fabs(o.myt);
-    int nf = iter_fp;
-    file_timesteps[nf] = t;
-    if (iter_fp == 0) {
-        if (stat(path, &st) == -1) {
-            mkdir(path, 0755);
-        }
-    }
+void output_htg(scalar * list, vector * vlist, vector * fvlist, const char* path, char* prefix, int iter_fp, double t) {
+//    file_timesteps[iter_fp] = t;
+//    if (iter_fp == 0) {
+//        if (stat(path, &st) == -1) {
+//            mkdir(path, 0755);
+//        }
+//    }
 	FILE * fp ;
 
 	char htg_name[80];  	  
-	sprintf(htg_name, "%s/%s_%06d.htg", path, prefix, iter_fp);
-    fprintf(ferr, "htg_name=%s\n", htg_name);
+	sprintf(htg_name, "%s/%s.htg", path, prefix);
+
 	fp = fopen(htg_name, "w");	  
 	if(!fp){
 		printf("output_htg.h : %s could not be opened\n Does the Folder exist?\n", htg_name);
@@ -269,9 +251,8 @@ void output_htg(struct PVD_output o) {
   output_pvd(htg_name, t, fp, firstTimeWritten);
   fclose(fp);
 #ifdef DEBUG_OUTPUT_VTU_MPI
-    fprintf (ferr, "iter_fp: %d t=%g dt=%g\n", nf, t, dt);
+    fprintf (ferr, "iter_fp: %d t=%g dt=%g\n", iter_fp, t, dt);
 #endif
-    iter_fp++;
 }
 
 #endif
@@ -284,7 +265,7 @@ void output_htg(struct PVD_output o) {
   MPI_File_write(fp,&buffer, strlen(buffer), MPI_CHAR, MPI_STATUS_IGNORE); \
   } while(0)
   
-void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File1 fp)
+void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File fp)
 {
 	#if defined(_OPENMP)
 		int num_omp = omp_get_max_threads();
@@ -317,8 +298,7 @@ void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File1 fp)
 	MPI_Barrier(MPI_COMM_WORLD);
 	double start = MPI_Wtime();
 #endif
-
-  int offset = 0;
+  MPI_Offset offset = 0;
 
 	int vertices_global_offset[grid->maxdepth+1];
   vertices_global_offset[0] = 0;
@@ -535,7 +515,7 @@ void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File1 fp)
 #endif
 
     Write2File(sprintf(buffer,"\t</HyperTreeGrid>\n\t<AppendedData encoding=\"raw\">\n_"));
-    int offset_tmp;
+    MPI_Offset offset_tmp;
     MPI_File_get_position(fp, &offset_tmp);
     offset += offset_tmp;    
 	} // end pid() == 0
@@ -552,8 +532,6 @@ void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File1 fp)
     int vertices_local_pL_offset[grid->maxdepth+1];
     /** Create an array large enough to hold data + spacing between the levels */
     long length_w_spacing = descBits_local + 7*(grid->maxdepth+1) + 8;
-    typedef unsigned char u_int8_t;
-    typedef unsigned int u_int32_t;
     u_int8_t* mask = (u_int8_t*)calloc( length_w_spacing, cell_size); //calloc needed?
     
     long index = 8; // start a 8
@@ -811,7 +789,6 @@ void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File1 fp)
   }
 #endif // end WRITE_HTG_LEVEL
   {
-    typedef unsigned int u_int32_t;
     struct scalar_t{
       u_int32_t size;
       float* data;
@@ -871,7 +848,6 @@ void output_htg_data_mpiio(scalar * list, vector * vlist, MPI_File1 fp)
     MPI_Type_free(&tree_type_scalar);  
   }   
   {
-    typedef unsigned int u_int32_t;
     struct vector_t{
       u_int32_t size;
       float* data;
@@ -1200,8 +1176,7 @@ void output_htg_data(scalar * list, vector * vlist, FILE * fp)
 	cell_size=sizeof(u_int8_t);    
 	  
   int vertices_local_corr = ((descBits_local/8)+1)*8;
-  typedef unsigned int u_int32_t;
-  typedef unsigned short u_int8_t;
+
   u_int32_t prepend_size = vertices_local_corr;
   fwrite(&prepend_size, sizeof(u_int32_t), 1, fp); 		
   u_int8_t* write_cache = (u_int8_t*)calloc(vertices_local_corr,cell_size);
@@ -1252,7 +1227,7 @@ void output_htg_data(scalar * list, vector * vlist, FILE * fp)
 	}
 	
 #endif // end WRITE_HTG_LEVEL
-    typedef float float_t;
+
 	for (scalar s in list) {
 		cell_size=sizeof(float_t);
 		  
@@ -1332,4 +1307,3 @@ void output_htg_data(scalar * list, vector * vlist, FILE * fp)
   
 }
 #endif
-

@@ -1,5 +1,5 @@
-#ifndef NOT_ZERO
-    #define NOT_ZERO 1.e-30
+#ifndef SMALL_EPS
+    #define SMALL_EPS 1.e-30
 #endif
 
 void MinMaxValues(scalar * list, double * arr_eps) {// for each scalar min and max
@@ -171,7 +171,7 @@ void filter_scalar(scalar f, scalar sf){
 #endif
 #if TREE
     sf.prolongation = refine_bilinear;
-    boundary ({sf});
+    sf.dirty = true; // boundary conditions need to be updated
 #endif
 }
 
@@ -203,301 +203,130 @@ void calc_scalar_from_face(const face vector vf, scalar vs){
 A function to rescale normals so that they are unit vectors w.r.t. the
 2-norm (by default, the 1-norm is adopted for efficiency purposes). */
 coord normalize_coord(coord n){
-    double nn = NOT_ZERO;
+    double nn = SMALL_EPS;
     foreach_dimension() nn += sq(n.x); // (sqrt(sq(nf.x[]) + sq(nf.y[])))
     nn = sqrt(nn);
     foreach_dimension() n.x /= nn;
     return n;
 }
 
-//coord normal (Point point, scalar c) {
-//    coord n = mycs (point, c);
-//    return normalize_coord(n);
-//}
-//
-//coord normal_face (Point point, scalar f){
-//    coord nf;
-//    foreach_dimension() nf.x = 0.;
-//    bool interface_plus = interfacial(point, f);
-//    bool interface_minus = interfacial(neighborp(-1), f);
-//    if (interface_minus || interface_plus) {
-//        if (interface_plus) {
-//            coord n = normal (point, f);
-//            foreach_dimension() nf.x += n.x;
-//        }
-//        if (interface_minus) {
-//            coord n = normal (neighborp(-1), f);
-//            nf.x += n.x;
-//            nf.y += n.y;
-//            #if dimension > 2
-//                nf.z += n.z;
-//            #endif
-//        }
-////        double norm_nf = 0;
-////        foreach_dimension() norm_nf += sq(nf.x); // (sqrt(sq(nf.x[]) + sq(nf.y[])))
-////        norm_nf = sqrt(norm_nf);
-////        foreach_dimension() nf.x /= norm_nf;
-//        nf = normalize_coord(nf);
-//    }
-//    return nf;
-//}
-//
-///**
-// *
-// * @param point
-// * @param f - volume fraction of fluid $1$
-// * @param fs - volume fraction of solid
-// * @return  tau_w - is the tangential surface normal pointing along the surface, into the liquid.
-// */
-//coord tangential_wall_and_normal_CL_face (Point point, scalar f, scalar fs) {
-//    coord n_f = normal_face (point, f);
-//    coord n_fs = normal_face (point, fs);
-//    double n_f_dot_n_fs = 0;
-//    foreach_dimension() n_f_dot_n_fs += n_f.x*n_fs.x;
-//    coord tau_w;
-//    foreach_dimension() tau_w.x = n_f.x - n_f_dot_n_fs*n_fs.x;
-//    tau_w = normalize_coord(tau_w);
-//    return tau_w;
-//}
-//
-//coord normal_face_correction (Point point, scalar f, scalar fs, double theta) {
-//    coord n_fs = normal_face (point, fs);
-//    coord tau_w = tangential_wall_and_normal_CL_face (point, f, fs);
-//    coord n_cor;
-//    foreach_dimension() n_cor.x = n_fs.x*cos(theta) - tau_w.x*sin(theta);
-//    return n_cor;
-//}
-//
-///**
-//A function to compute 2-norm cell-centered/face-centered normals in every cell/face. */
-//
-//void compute_normal (scalar f, vector normal_vector) {
-//    foreach() {
-//        coord n = normal (point, f);
-//        foreach_dimension()
-//        normal_vector.x[] = n.x;
-//    }
-//    boundary((scalar*){normal_vector});
-//}
-//
-//void compute_normal_face (scalar f, face vector normal_vector_face) {
-//    foreach_face() {
-//        coord n = normal_face (point, f);
-//        foreach_dimension()
-//        normal_vector_face.x[] = n.x;
-//    }
-//    boundary((scalar*){normal_vector_face});
-//}
-//
-//void compute_tangential_wall_and_normal_CL_face (scalar f, scalar fs, face vector tau_w) {
-//    foreach_face() {
-//        coord tau = tangential_wall_and_normal_CL_face (point, f, fs);
-//        foreach_dimension()
-//        tau_w.x[] = tau.x;
-//    }
-//    boundary((scalar*){tau_w});
-//}
-//
-///**
-//A function to suppress glitches after an advection. */
-//
-//void magnet (scalar f, double error) {
-//    foreach() {
-//        f[] = clamp(f[], 0., 1.);
-//        f[] = (f[] < error ? 0. : (f[] > 1. - error ? 1. : f[]));
-//    }
-//    boundary ({f});
-//}
-//
-///**
-//A function to compute in each point the divergence of a gradient based flux. */
-//
-//void my_laplacian (scalar f, scalar l, face vector D) {
-//    boundary({f, D});
-//    foreach() {
-//        l[] = 0.;
-//        foreach_dimension() l[] += (f[1] - f[0])*D.x[1] - (f[] - f[-1])*D.x[];
-//        l[] /= sq(Delta);
-//    }
-//    boundary({l});
-//}
+/**
+ * Compute sign function for a given (x,y) for cylinder obstacles.
+ * Inner area has sign > 0, outer one has < 0.
+ * @param x input x coordinate
+ * @param y input y coordinate
+ * @param xc x coordinate of a cylinder center
+ * @param yc y coordinate of a cylinder center
+ * @param size radius of a cylinder
+ * @return sign function
+ */
+double sign_function_of_cylinder_obstacle(double x, double y, double xc, double yc, double size){
+    return sq(size) - sq(x  - xc) - sq(y - yc); // inner distance > 0, outer distance < 0
+}
+
 
 /**
-A function to mesure the length of the interface in the cell. Warning: the
-length is normalised by the size of the cell. To get the real interface length
-you have to multiplie it by the cell size $\Delta$. */
+ * Compute sign function for a given (x,y,z) for a bubble in 2D space.
+ * Inner area has sign < 0, outer one has > 0.
+ * @param x input x coordinate
+ * @param y input y coordinate
+ * @param xc x coordinate of a bubble center
+ * @param yc y coordinate of a bubble center
+ * @param size radius of a bubble
+ * @return sign function
+ */
+double sign_function_of_bubble(double x, double y, double xc, double yc, double size){
+    return sq(x  - xc) + sq(y - yc) - sq(size); // inner distance > 0, outer distance < 0
+}
 
-//double interface_length (Point point, scalar c)
-//{
-//    coord n = mycs (point, c);
-//    double alpha = line_alpha (c[], n);
-//    coord coord_centroid = {0, 0};
-//    return line_length_center(n, alpha, &coord_centroid);
-//}
+/**
+ * Compute sign function for a given (x,y,z) for a bubble.
+ * Inner area has sign < 0, outer one has > 0.
+ * @param x input x coordinate
+ * @param y input y coordinate
+ * @param z input z coordinate
+ * @param xc x coordinate of a bubble center
+ * @param yc y coordinate of a bubble center
+ * @param zc z coordinate of a bubble center
+ * @param size radius of a bubble
+ * @return sign function
+ */
+double sign_function_of_bubble(double x, double y, double z, double xc, double yc, double zc, double size){
+    return sq(x  - xc) + sq(y - yc) + sq(z - zc) - sq(size); // inner distance > 0, outer distance < 0
+}
 
-#define betwf(val) ((val > 0) && (val < 1))
+/**
+ * This function compute scalar field from analytical representation of bunch of cylinders.
+ * @param f volume fraction
+ * @param ns number of cylinders
+ * @param generate_cylinders function to generate cylinders centers (xc, yc) and radii (R)
+ * @param obstacle_pattern distance function for each cylinder
+ */
+void compute_volume_fraction (
+        scalar f,
+        const int ns,
+        void (* generate_cylinders) (double xc[], double yc[], double R[], const int ns),
+        double (*distance_function) (double x, double y, double xc, double yc, double size)
+)
+{
+    face vector face_f[];
+    vertex scalar phi[];
+    double xc[ns], yc[ns], R[ns];
+    generate_cylinders(xc, yc, R, ns);
 
-#define F_LIQ_EPS 1e-6
-//void correct_f(scalar f, scalar f_corr){
-//    double neighb, f1, f2;
-//    foreach(){
-//        f_corr[] = f[];
-//    }
-//    boundary((scalar *){f_corr});
-////    // Correction step
-//    foreach(){
-//        if (interfacial (point, f)){
-//            neighb = f[-1,1];
-//            f1 = f[-1,0];
-//            f2 = f[0,1];
-//            if ( !betwf(f1) && !betwf(f2) && betwf(neighb) ){
-//                f_corr[-1,0] = f[-1,0]*fabs(f[-1,0] - F_LIQ_EPS);
-//                f_corr[0, 1] = f[0, 1]*fabs(f[0, 1] - F_LIQ_EPS);
-//            }
-//            neighb = f[1,1];
-//            f1 = f[0,1];
-//            f2 = f[1,0];
-//            if ( !betwf(f1) && !betwf(f2) && betwf(neighb) ){
-//                f_corr[0,1] = f[0,1]*fabs(f[0,1] - F_LIQ_EPS);
-//                f_corr[1,0] = f[1,0]*fabs(f[1,0] - F_LIQ_EPS);
-//            }
-//            neighb = f[1,-1];
-//            f1 = f[1,0];
-//            f2 = f[0,-1];
-//            if ( !betwf(f1) && !betwf(f2) && betwf(neighb) ){
-//                f_corr[1,0] = f[1,0]*fabs(f[1,0] - F_LIQ_EPS);
-//                f_corr[0,-1] = f[0,-1]*fabs(f[0,-1] - F_LIQ_EPS);
-//            }
-//            neighb = f[-1,-1];
-//            f1 = f[0,-1];
-//            f2 = f[-1,0];
-//            if ( !betwf(f1) && !betwf(f2) && betwf(neighb) ){
-//                f_corr[0,-1] = f[0,-1]*fabs(f[0,-1] - F_LIQ_EPS);
-//                f_corr[-1,0] = f[-1,0]*fabs(f[-1,0] - F_LIQ_EPS);
-//            }
-//        }
-//    }
-//    boundary((scalar *){f_corr});
-//}
-//
-//double average_neighbors(Point point, scalar c, int i, int j, int k){
-//    double res = 0;
-//    int kk=0;
-//    for (int ii = -1; ii <= 1; ii++)
-//        for (int jj = -1; jj <= 1; jj++)
-//#if dimension>2
-//            for (int kk = -1; kk <= 1; kk++)
-//#endif
-//                res += c[i + ii, j + jj, k + kk];
-//    return res/pow(3, dimension);
-//}
+    foreach_vertex() {
+        phi[] = HUGE;
+        /**
+        Since the medium is periodic, we need to take into account all
+        the disk images using periodic symmetries. */
 
+        for (double xp = -L0; xp <= L0; xp += L0)
+            for (double yp = -L0; yp <= L0; yp += L0)
+                for (int i = 0; i < ns; i++)
+                    for (int i = 0; i < ns; i++)
+                        phi[] = intersection (phi[], distance_function(x, y, xc[i] - xp, yc[i] - yp, R[i]));
+//		phi[] = -phi[];
+    }
+    fractions (phi, f, face_f);
+}
 
+/**
+ * function to compute vector for each cell of scalar field `f`.
+ * @param f scalar field
+ * @param normal_vector computed normals
+ */
+void compute_normal(const scalar f, vector normal_vector) {
+    foreach () {
+        coord n = interface_normal(point, f);
+        foreach_dimension() { normal_vector.x[] = n.x; }
+    }
+}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//void correct_f(scalar f, scalar f_corr){
-//    double avg1, avg2, neighb, f1, f2;
-//    foreach(){
-//        f_corr[] = f[];
-//    }
-//    boundary((scalar *){f_corr});
-//    // Correction step
-//    foreach(){
-//        if (interfacial (point, f)){
-//            neighb = f[-1,1];
-//            f1 = f[-1,0];
-//            f2 = f[0,1];
-//            if ( !betwf(f1) && !betwf(f2) && betwf(neighb) ){
-//                avg1 = average_neighbors(point, f, -1, 0, 0);
-//                avg2 = average_neighbors(point, f, 0, 1, 0);
-//                f_corr[-1,0] = (avg1/(avg1 + avg2));
-//                f_corr[0,1] = (avg2/(avg1 + avg2));
-//            }
-//            neighb = f[1,1];
-//            f1 = f[0,1];
-//            f2 = f[1,0];
-//            if ( !betwf(f1) && !betwf(f2) && betwf(neighb) ){
-//                avg1 = average_neighbors(point, f, 0, 1, 0);
-//                avg2 = average_neighbors(point, f, 1, 0, 0);
-//                f_corr[0,1] = (avg1/(avg1 + avg2));
-//                f_corr[1,0] = (avg2/(avg1 + avg2));
-//            }
-//            neighb = f[1,-1];
-//            f1 = f[1,0];
-//            f2 = f[0,-1];
-//            if ( !betwf(f1) && !betwf(f2) && betwf(neighb) ){
-//                avg1 = average_neighbors(point, f, 1, 0, 0);
-//                avg2 = average_neighbors(point, f, 0, -1, 0);
-//                f_corr[1,0] = (avg1/(avg1 + avg2));
-//                f_corr[0,-1] = (avg2/(avg1 + avg2));
-//            }
-//            neighb = f[-1,-1];
-//            f1 = f[0,-1];
-//            f2 = f[-1,0];
-//            if ( !betwf(f1) && !betwf(f2) && betwf(neighb) ){
-//                avg1 = average_neighbors(point, f, 0, -1, 0);
-//                avg2 = average_neighbors(point, f, -1, 0, 0);
-//                f_corr[0,-1] = (avg1/(avg1 + avg2));
-//                f_corr[-1,0] = (avg2/(avg1 + avg2));
-//            }
-//        }
-//    }
-//    boundary((scalar *){f_corr});
-//}
-
-//void correct_f(scalar f, scalar f_corr){
-//    double avg1, avg2, neighb, f1, f2;
-//    foreach(){
-//        f_corr[] = f[];
-//    }
-//    boundary((scalar *){f_corr});
-//    // Correction step
-//    foreach(){
-//        if (interfacial (point, f)){
-//            neighb = f[-1,1];
-//            f1 = f[-1,0];
-//            f2 = f[0,1];
-//            if ( !betwf(f1) && !betwf(f2) && betwf(neighb) ){
-//                f_corr[-1,0] = fabs(f[-1,0] - F_LIQ_EPS);
-//                f_corr[0,1] = fabs(f[0,1] - F_LIQ_EPS);
-//            }
-//            neighb = f[1,1];
-//            f1 = f[0,1];
-//            f2 = f[1,0];
-//            if ( !betwf(f1) && !betwf(f2) && betwf(neighb) ){
-//                f_corr[0,1] = fabs(f[0,1] - F_LIQ_EPS);
-//                f_corr[1,0] = fabs(f[1,0] - F_LIQ_EPS);
-//            }
-//            neighb = f[1,-1];
-//            f1 = f[1,0];
-//            f2 = f[0,-1];
-//            if ( !betwf(f1) && !betwf(f2) && betwf(neighb) ){
-//                f_corr[1,0] = fabs(f[1,0] - F_LIQ_EPS);
-//                f_corr[0,-1] = fabs(f[0,-1] - F_LIQ_EPS);
-//            }
-//            neighb = f[-1,-1];
-//            f1 = f[0,-1];
-//            f2 = f[-1,0];
-//            if ( !betwf(f1) && !betwf(f2) && betwf(neighb) ){
-//                f_corr[0,-1] = fabs(f[0,-1] - F_LIQ_EPS);
-//                f_corr[-1,0] = fabs(f[-1,0] - F_LIQ_EPS);
-//            }
-//        }
-//    }
-//    boundary((scalar *){f_corr});
-//}
+/**
+ * Compute theoretical norms of cylinder on the interface. Out of interface the norm is {0,0,0}.
+ * @param f input scalar field
+ * @param f_normal output vector field of normals
+ * @param ns number of cylinders
+ * @param generate_cylinders function to generate cylinders centers (xc, yc) and radii (R)
+ */
+void calc_norms_theoretical(
+        const scalar f,
+        vector f_normal,
+        const int ns,
+        void (* generate_cylinders) (double xc[], double yc[], double R[], const int ns),
+){
+    double xc[ns], yc[ns], R[ns];
+    generate_cylinders(xc, yc, R, ns);
+    foreach() {
+        if (f[] > 0 && f[] < 1){
+            for (int i = 0; i < ns; i++) {
+                double magn = sqrt(sq(x - xc[i]) + sq(y - yc[i])) + 1e-15;
+                f_normal.x[] = (x - xc[i]) / magn;
+                f_normal.y[] = (y - yc[i]) / magn;
+                f_normal.z[] = 0;
+            }
+        }else{
+            foreach_dimension() f_normal.x[] = 0;
+        }
+    }
+}

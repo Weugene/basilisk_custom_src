@@ -1,6 +1,12 @@
-//The module is intended to solve the heat transfer equation, the polymerization effect and rheology changing
-//it is coupled with navier-stokes/centered.h module
-//
+// The module is intended to solve the heat transfer equation, the polymerization effect and rheology changing
+// it is coupled with navier-stokes/centered-weugene.h module.
+// To correctly use this module you need to define:
+// - REACTION_MODEL not define or define as one of (REACTION_MODEL_NON_AUTOCATALYTIC, REACTION_MODEL_N_ORDER_AUTOCATALYTIC, 
+//      REACTION_MODEL_PROUT_TOMPKINS_AUTOCATALYTIC, NO_REACTION_MODEL)
+// - T_DIRICHLET_BC not define or define to 1
+// - m_bp_T - number of grid cells in Brinkamn layer, default is m_bp_T = 1
+// - eta_T - penalization coefficient, default is eta_T = sq(m_bp_T * mindelta) / chi_conductivity;
+// - viscDissipation should we consider viscous dissipation 
 #define HEAT_TRANSFER
 #define REACTION_MODEL_NON_AUTOCATALYTIC 1
 #define REACTION_MODEL_N_ORDER_AUTOCATALYTIC 2
@@ -10,7 +16,7 @@
 #include "three-phase-rheology.h"
 #include "diffusion-weugene.h"
 #include "dissipation.h"
-//const scalar const_temp_solid[] = 1.1;
+// const scalar const_temp_solid[] = 1.1;
 (const) scalar T_target = unity;
 double eta_T = 0;
 double m_bp_T = 0;
@@ -22,9 +28,18 @@ double Ea_by_R = 5;// Kelvin
 double n_degree = 1.667;
 double m_degree = 0.333;
 bool viscDissipation = false;
-bool stokes_heat = false; // If *stokes_heat* is set to *true*, the advection term in heat equation $(\mathbf{u}\cdot\nabla)T$ is omitted.
+// If *stokes_heat* is set to *true*, the advection term in heat equation
+// $(\mathbf{u}\cdot\nabla)T$ and $(\mathbf{u}\cdot\nabla)\alpha_{doc}$ is omitted.
+bool stokes_heat = false;
+double CFL_ARR = 0.3; // max changing of alpha in one timestep
 #undef SEPS
 #define SEPS 1e-10
+
+scalar src_T[]; // source term for temperature
+
+#ifdef REACTION_MODEL
+scalar src_alpha_doc[]; // source term for degree of cure
+#endif
 
 /**
  * In the DSC measurements, the degree of cure ($\alpha$) ranges from 0 (completely uncured) to 1 (fully cured) and is defined as follows:
@@ -70,120 +85,56 @@ bool stokes_heat = false; // If *stokes_heat* is set to *true*, the advection te
 #endif
 
 /**
- * \rho C_p T_t = \nabla\kappa\nabla T^{n+1} + \rho_1 Q A (1-\alpha^n)^{n_degree}\exp(-E_a/(RT^n))(1 - E_a/(R T^n) + E_a T^{n+1}/(R (T^n)^2)) - \rho C_p \chi\frac{T^{n+1}- T_0}{\eta_T}
+ * \rho C_p T_t = \nabla\kappa\nabla T^{n+1} + \rho_1 Q (1-\alpha^n)^{n_degree}\exp(-E_a/(RT^n))(1 - E_a/(R T^n) + E_a T^{n+1}/(R (T^n)^2)) - \rho C_p \chi\frac{T^{n+1}- T_0}{\eta_T}
  * \thetav = \rho C_p
  * D = \kappav
  * beta = \rho_1 Q A (1-\alpha^n)^{n_degree} \exp(-E_a/(RT^n)) \frac{E_a}{R (T^n)^2} - \frac{\rho C_p \chi}{\eta_T}
  * r = \rho_1 Q A (1-\alpha^n)^{n_degree} \exp(-\frac{E_a}{RT^n})(1 - \frac{E_a}{RT^n}) + \frac{\rho C_p \chi T_0}{\eta_T}
  */
 
-event stability (i++,last) {
-    dt = dtnext (stokes_heat ? dtmax : timestep (uf, dtmax));
+event init (i = 0)
+{
+    // Nullify src_T and compute viscous dissipative term and put into src_T
+    // we requires stratification of temperature field since
+    // at t = 0 the velocity field undergoes large changes
+    foreach(){
+        src_T[] = 0;
+    }
+    if (viscDissipation && (i > 1000)){
+        dissipation (dis=src_T, u=u, mu=mu, dump_dis=true);
+    }
+    // Compute source term for degree of cure
+    foreach(){
+        src_alpha_doc[] = KT(T[]) * FR(alpha_doc[]);
+#if REACTION_MODEL != NO_REACTION_MODEL
+        src_T[] += rho1 * Htr * f[] * (1 - fs[]) * src_alpha_doc[];
+#endif
+
+#if T_DIRICHLET_BC == 1 // indicator
+        // Penalization term
+        src_T[] -= rhoCpv[] * fs[] * (T[] - T_target[])/eta_T;
+#endif
+    }
+}
+
+
+// integration time step
+event stability (i++) {
+    // If it will be considered in hydrodynamic advection step, then no need to compute in heat advection step
+    if (stokes)
+        dt = dtnext (stokes_heat ? dtmax : timestep (uf, dtmax));
     fprintf(ferr, "TIME heat advection: t=%g tnext=%g dt=%g DT=%g dtmax=%g stokes_heat=%d\n",
             t, tnext, dt, DT, dtmax, stokes_heat );
-}
-
-// TODO: move to `chem_advection_term`?
-#if REACTION_MODEL != NO_REACTION_MODEL //  POLYMERIZATION_REACTION
-event vof (i++){
-    if (!stokes_heat) {
-        advection ((scalar *){alpha_doc}, uf, dt);
-    }
-}
-#endif
-
-event chem_advection_term (i++){
-    if (!stokes_heat) {
-        advection((scalar *) {T}, uf, dt);
-    }
-}
-
-
-event advection_term (i++,last)
-{
-    if (!stokes || !stokes_heat) {
-        prediction();
-        mgpf = project (uf, pf, alpham, dt/2., mgpf.nrelax);
-#if REACTION_MODEL == NO_REACTION_MODEL
-        if (!stokes_heat)
-      advection ((scalar *){u, T}, uf, dt, (scalar *){g, zeroc}); // original version
-#else
-        if (!stokes_heat)
-            advection ((scalar *){u, T, alpha_doc}, uf, dt, (scalar *){g, zeroc, zeroc}); // original version
-#endif
-    }
-}
-
-mgstats mgT;
-event end_timestep (i++){
-    scalar r[], thetav[], beta[], R_source[];
-    foreach()
-        thetav[] =  var_hom(f[], fs[], rho1*Cp1, rho2*Cp2, rho3*Cp3);
-    // advection term of kinetic equation is solved implicitly
-    // due to a linearized source term
-#if REACTION_MODEL != NO_REACTION_MODEL //  POLYMERIZATION_REACTION
-    foreach() {
-        double alpha_doc_old = alpha_doc[];
-#if GENERAL_METHOD == 0
-        alpha_doc[] = 1.0 - pow(
-                pow(fabs(1 - alpha_doc[]), 1 - n_degree) + (n_degree - 1.0) * dt * KT(T[]),
-                1.0/(1.0 - n_degree));//direct integration from t to t + dt at fixed T
-#else
-// Crank--Nicolson
-//        alpha_doc[] = (alpha_doc[] + 0.5 * dt * KT(T[]) * (2.0 * FR(alpha_doc[]) - dFR_dalpha(alpha_doc[]) * alpha_doc[])) /
-//                          (1 - 0.5 * dt * KT(T[]) * dFR_dalpha(alpha_doc[]));
-// Backward Euler
-        alpha_doc[] = (alpha_doc[] + dt * KT(T[]) * ( FR(alpha_doc[]) - dFR_dalpha(alpha_doc[]) * alpha_doc[])) /
-                          (1 - dt * KT(T[]) * dFR_dalpha(alpha_doc[]));
-#endif
-        //source and conductivity terms. f[] * (1 - fs[]) multiplications means gas and solids can't produce heat
-        R_source[] = (alpha_doc[] - alpha_doc_old) * f[] * (1 - fs[]) / dt;
-        alpha_doc[] = clamp(alpha_doc[], 0.0, 1.0);
-    }
-#endif
-    // considering the viscous dissipation
-    if ((i>1000) && viscDissipation){
-        dissipation (r, u, mu = mu);
-    }else{
-        foreach () {
-            r[] = 0.;
+    if (i % 10 == 0){
+        double dt_Arr_min = 1e+10;
+        foreach( reduction(min:dt_Arr_min)){
+            dt_Arr_min = CFL_ARR / (KT(T[]) * dFR_dalpha(alpha_doc[]) + SEPS);
         }
-    }
-    //solids play role in the conduction process
-    if (fabs(Htr) > SEPS){
-        foreach() {
-            beta[] = 0;
-            #if REACTION_MODEL != NO_REACTION_MODEL
-                r[] += rho1*Htr*R_source[];
-            #endif
-            //Penalization terms are:
-            #if T_DIRICHLET_BC == 1
-                r[] += fs[] * thetav[] * T_target[] / eta_T;
-                beta[] += -fs[] * thetav[] / eta_T;
-            #endif
-        }
-    }else {// Htr = 0
-            foreach() {
-                #if T_DIRICHLET_BC == 1
-                    r[] += fs[] * thetav[] * T_target[] / eta_T;
-                    beta[] = -fs[] * thetav[] / eta_T;
-                #else
-                    beta[] = 0;
-                #endif
-            }
-    }
-
-    if (constant(kappa.x) != 0.) {
-        mgT = diffusion(T, dt, D = kappav, r = r, beta = beta, theta = thetav);
-#ifdef DEBUG_HEAT
-        fprintf (stderr, "mgT: i=%d t=%g dt=%g num of iterations T=%d\n", i, t, dt, mgT.i); //number of iterations
-#endif
-    }else{
-        foreach(){
-            T[] = (thetav[] * T[] + dt * r[])/(thetav[] - dt * beta[]);
-        }
+        dt = min(dt, dt_Arr_min);
+        fprintf(ferr, "dt_Arr=%g min(dt,dt_arr)=%g\n", dt_Arr_min, dt);
     }
 }
+
 
 // In first 10 steps, eta_T and m_bp_T will be adjusted
 event properties (i < 10){
@@ -212,16 +163,78 @@ event properties (i < 10){
 	}
 }
 
-// integration time step
-double CFL_ARR = 0.3;//max changing of alpha in one timestep
-event stability(i++){
-  if (i % 100 == 0){
-  	double dt_Arr_min = 1e+10;
-  	foreach( reduction(min:dt_Arr_min)){
-  	    double dt_arr = CFL_ARR / (KT(T[]) * dFR_dalpha(alpha_doc[]) + SEPS);
-        if (dt_arr > dt_Arr_min) dt_Arr_min = dt_arr;
+
+event chem_advection_term (i++){
+    if (!stokes_heat) {
+#if REACTION_MODEL == NO_REACTION_MODEL
+        advection((scalar *) {T}, uf, dt, (scalar *){src_T});
+#else
+        advection ((scalar *){T, alpha_doc}, uf, dt, (scalar *){src_T, src_alpha_doc});
+#endif
     }
-  	dt = min(dt, dt_Arr_min);
-  	fprintf(ferr, "dt_Arr=%g min(dt,dt_arr)=%g\n", dt_Arr_min, dt);
-  }
 }
+
+
+mgstats mgT;
+event chem_conductivity_term (i++){
+    scalar r[], beta[];
+    // Kinetic equation is solved implicitly due to a linearized source term
+#if REACTION_MODEL != NO_REACTION_MODEL //  POLYMERIZATION_REACTION
+    foreach() {
+        double alpha_doc_old = alpha_doc[];
+#if GENERAL_METHOD == 0 // analytical method for non-catalytic case
+// https://www.notion.so/polymerization-scheme-Semi-analytical-solution-for-non-autocatalytic-a00d5e73fb1b4c20b78c711ac17973e3?pvs=4
+        alpha_doc[] = 1.0 - pow(
+                pow(fabs(1 - alpha_doc[]), 1 - n_degree) + (1.0 - n_degree) * dt * KT(T[]),
+            1.0/(1.0 - n_degree)); // direct integration from t to t + dt at fixed T^n
+//        alpha_doc[] = 1 - exp(log(fabs(1 - alpha_doc[])) - KT(T[]) * dt) if n_degree = 1
+#else // general method
+// Crank--Nicolson
+//        alpha_doc[] = (alpha_doc[] + 0.5 * dt * KT(T[]) * (2.0 * FR(alpha_doc[]) - dFR_dalpha(alpha_doc[]) * alpha_doc[])) /
+//                          (1 - 0.5 * dt * KT(T[]) * dFR_dalpha(alpha_doc[]));
+// Backward Euler
+        alpha_doc[] = (alpha_doc[] + dt * KT(T[]) * ( FR(alpha_doc[]) - dFR_dalpha(alpha_doc[]) * alpha_doc[])) /
+                          (1 - dt * KT(T[]) * dFR_dalpha(alpha_doc[]));
+#endif
+        alpha_doc[] = clamp(alpha_doc[], 0.0, 1.0);
+        // compute source term for alpha_doc
+        src_alpha_doc[] = 0.5 * KT(T[]) * (FR(alpha_doc_old) + FR(alpha_doc[]) );
+        //source and conductivity terms. f[] * (1 - fs[]) multiplications means gas and solids can't produce heat
+        src_T[] = f[] * (1 - fs[]) * rho1 * Htr * src_alpha_doc[];
+    }
+#endif
+    // considering the viscous dissipation
+    if ((i>1000) && viscDissipation){
+        dissipation (r, u, mu = mu);
+    }else{
+        foreach () {
+            r[] = 0.;
+        }
+    }
+    // without linearization of source term of $q$
+    foreach() {
+        beta[] = 0;
+        // Exothermal term
+#if REACTION_MODEL != NO_REACTION_MODEL
+        r[] += src_T[];
+#endif
+        // Penalization term
+#if T_DIRICHLET_BC == 1
+        r[] += fs[] * rhoCpv[] * T_target[] / eta_T;
+        beta[] += -fs[] * rhoCpv[] / eta_T;
+#endif
+    }
+
+    if (constant(kappa.x) != 0.) {
+        mgT = diffusion(T, dt, D = kappav, r = r, beta = beta, theta = rhoCpv);
+#ifdef DEBUG_HEAT
+        fprintf (stderr, "mgT: i=%d t=%g dt=%g num of iterations T=%d\n", i, t, dt, mgT.i); //number of iterations
+#endif
+    }else{ // kappa=0
+        foreach(){
+            T[] = (rhoCpv[] * T[] + dt * r[])/(rhoCpv[] - dt * beta[]);
+        }
+    }
+}
+
+

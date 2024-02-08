@@ -48,7 +48,7 @@ const vector zerocf[] = {0.,0.,0.};
     #define SEPS 1e-15
     #ifdef DEBUG_BRINKMAN_PENALIZATION
         vector dbp[], total_rhs[], residual_of_u[];
-        vector utau[], grad_utau_n[];
+        vector utau[], grad_utau_n[], divtauu[];
         #define gradun grad_utau_n.x[]
     #else
         double gradun;

@@ -796,6 +796,8 @@ static double GetLinesCurv(
 static double GetCrossCurv(
     Point point, scalar vf, vector nn, const Trans* w, const Partstr* conf) {
   coord ll[kMaxSection];
+  coord LL = {0,0,0};
+  for (int pp=0; pp<kMaxSection; pp++) {ll[pp] = LL;}
   int nl = 0;
   Section(point, vf, nn, w, ll, &nl);
   double res;
@@ -880,6 +882,8 @@ void DumpLines(
         const Trans w = GetSectionTrans(s, Ns, &b);
 
         coord ll[kMaxSection];
+        coord LL = {0,0,0};
+        for (int pp=0; pp<kMaxSection; pp++) {ll[pp] = LL;}
         int nl = 0;
 
         Section(point, vf, nn, &w, ll, &nl);

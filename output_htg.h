@@ -143,7 +143,7 @@ The Bitmask is written in "append" mode as well resulting in an uncluttered file
 #include <unistd.h>
 struct stat st = {0};
 
-void output_htg(scalar * list, vector * vlist, vector * fvlist, const char* path, char* prefix, int iter_fp, double t);
+void output_htg(scalar * list, vector * vlist, const char* path, char* prefix, int iter_fp, double t);
 
 //void restore_filetimesteps
 #if _MPI
@@ -153,23 +153,20 @@ void output_htg_data(scalar * list, vector * vlist, FILE * fp);
 #endif
 
 #if _MPI
-void output_htg(scalar * list, vector * vlist, vector * fvlist, const char* path, char* prefix, int iter_fp, double t) {
+void output_htg(scalar * list, vector * vlist, const char* path, char* prefix, int iter_fp, double t) {
 //    static int iter_fp = 0; // write file iteration, other than `i`
 //    static float file_timesteps[9999];
 //    file_timesteps[iter_fp] = t;
-    if (iter_fp == 0 && pid() == 0) {
-        // check if a path exists
-        if (stat(path, &st) == -1) {
-            // create if not exist
-            mkdir(path, 0755);
-        }
+    if (iter_fp == 0 && pid() == 0 && stat(path, &st) == -1) {
+        // create if not exist
+        mkdir(path, 0755);
     }
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_File fp;
 
 	int ec;
-	char htg_name[80];  	  
-	sprintf(htg_name, "%s/%s.htg", path, prefix);
+	char htg_name[80];
+	sprintf(htg_name, "%s/%s_%06d.htg", path, prefix, iter_fp);
 
 	ec = MPI_File_open(MPI_COMM_WORLD, htg_name, \
 		MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &fp);
@@ -194,7 +191,7 @@ void output_htg(scalar * list, vector * vlist, vector * fvlist, const char* path
   if(pid()==0){
 		bool firstTimeWritten = false;
 		char pvd_name[80];	  
-		sprintf(pvd_name,"output_%s.pvd",path);
+		sprintf(pvd_name,"%s.pvd", prefix);
 	
 		ec = MPI_File_open(MPI_COMM_SELF, pvd_name, \
 			MPI_MODE_RDWR, MPI_INFO_NULL, &fp);
@@ -218,17 +215,16 @@ void output_htg(scalar * list, vector * vlist, vector * fvlist, const char* path
 }
 
 #else // no MPI
-void output_htg(scalar * list, vector * vlist, vector * fvlist, const char* path, char* prefix, int iter_fp, double t) {
+void output_htg(scalar * list, vector * vlist, const char* path, char* prefix, int iter_fp, double t) {
 //    file_timesteps[iter_fp] = t;
-//    if (iter_fp == 0) {
-//        if (stat(path, &st) == -1) {
-//            mkdir(path, 0755);
-//        }
-//    }
+    // create if not exist
+    if (iter_fp == 0 && stat(path, &st) == -1) {
+        mkdir(path, 0755);
+    }
 	FILE * fp ;
 
-	char htg_name[80];  	  
-	sprintf(htg_name, "%s/%s.htg", path, prefix);
+	char htg_name[80];
+	sprintf(htg_name, "%s/%s_%06d.htg", path, prefix, iter_fp);
 
 	fp = fopen(htg_name, "w");	  
 	if(!fp){
@@ -242,7 +238,7 @@ void output_htg(scalar * list, vector * vlist, vector * fvlist, const char* path
 
   bool firstTimeWritten = false;
   char pvd_name[80];	  
-  sprintf(pvd_name,"output_%s.pvd",path);
+  sprintf(pvd_name,"%s.pvd", prefix);
   fp = fopen(pvd_name, "r+");
   if( (iter_fp == 0) ||  (fp == NULL) ) {
     fp = fopen(pvd_name,"w");

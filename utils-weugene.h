@@ -1,3 +1,4 @@
+#include "fractions.h"
 #ifndef SMALL_EPS
     #define SMALL_EPS 1.e-30
 #endif
@@ -224,7 +225,7 @@ double sign_function_of_cylinder_obstacle(double x, double y, double xc, double 
     return sq(size) - sq(x  - xc) - sq(y - yc); // inner distance > 0, outer distance < 0
 }
 
-
+#if dimension==2
 /**
  * Compute sign function for a given (x,y,z) for a bubble in 2D space.
  * Inner area has sign < 0, outer one has > 0.
@@ -239,6 +240,7 @@ double sign_function_of_bubble(double x, double y, double xc, double yc, double 
     return sq(x  - xc) + sq(y - yc) - sq(size); // inner distance > 0, outer distance < 0
 }
 
+#else
 /**
  * Compute sign function for a given (x,y,z) for a bubble.
  * Inner area has sign < 0, outer one has > 0.
@@ -254,7 +256,7 @@ double sign_function_of_bubble(double x, double y, double xc, double yc, double 
 double sign_function_of_bubble(double x, double y, double z, double xc, double yc, double zc, double size){
     return sq(x  - xc) + sq(y - yc) + sq(z - zc) - sq(size); // inner distance > 0, outer distance < 0
 }
-
+#endif
 /**
  * This function compute scalar field from analytical representation of bunch of cylinders.
  * @param f volume fraction
@@ -313,7 +315,7 @@ void calc_norms_theoretical(
         const scalar f,
         vector f_normal,
         const int ns,
-        void (* generate_cylinders) (double xc[], double yc[], double R[], const int ns),
+        void (* generate_cylinders) (double xc[], double yc[], double R[], const int ns)
 ){
     double xc[ns], yc[ns], R[ns];
     generate_cylinders(xc, yc, R, ns);

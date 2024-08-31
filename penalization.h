@@ -70,79 +70,45 @@ struct Brinkman {
     double dt;
 };
 
-#if BRINKMAN_PENALIZATION == 4
-void calc_target_U(const vector u, vector target_U, const vector normal){
-    if (!is_constant(U_solid.x)) foreach() foreach_dimension() target_U.x[] = U_solid.x[];
-    if (fabs(lambda_slip) > 0.) {
-        double ubyn;
-        #ifndef DEBUG_BRINKMAN_PENALIZATION
-        vector utau[]; // otherwise utau will be defined globally
-        #endif
-        if (!is_constant(U_solid.x)) foreach() foreach_dimension() u.x[] -= U_solid.x[];
-        //    if (!is_constant(U_solid.x)) fprintf(ferr, "U_solid.x");
-        foreach() {
-            ubyn = 0;
-            foreach_dimension() ubyn += u.x[]*normal.x[];
-            foreach_dimension() utau.x[] = u.x[] - ubyn*normal.x[];
-        }
-        if (!is_constant(U_solid.x)) foreach() foreach_dimension() u.x[] += U_solid.x[];
 
-        foreach() {
-            if (0 < fs[] && fs[] < 1) { //See here!
-				coord gradun;
-                foreach_dimension() {
-					gradun.x = (n_sol.x[] > 0) ? (utau.x[2] - utau.x[1])/Delta : (utau.x[-1] - utau.x[-2])/Delta;
-                    gradun = ((utau.x[-1] - utau.x[-2])*0.5*(fs[-1] + fs[-2]) + (utau.x[2] -  utau.x[1])*0.5*(fs[1] + fs[2]))*n_sol.x[] / Delta
-                            #if dimension > 1
-                            + ((utau.x[0,-1] - utau.x[0,-2])*0.5*(fs[0,-1] + fs[0,-2]) + (utau.x[0,2] - utau.x[0,1])*0.5*(fs[0,1] + fs[0,2]))*n_sol.y[]/Delta
-                            #endif
-                            #if dimension > 2
-                            + ((utau.x[0, 0, -1] - utau.x[0, 0, -2])*0.5*(fs[0, 0, -1] + fs[0, 0, -2]) + (utau.x[0, 0, 2] - utau.x[0, 0, 1])*0.5*(fs[0, 0, 2] + fs[0, 0, 1]))*n_sol.z[] / Delta
-                            #endif
-                            ;
-                    target_U.x[] += lambda_slip*gradun;
-                }
-                //            if (target_U.x[]) fprintf(ferr, "Ut = %g, U_s = %g, l=%g gr=%g\n", target_U.x[], U_solid.x[], lambda_slip, gradun);
-            }else{
-                foreach_dimension() target_U.x[] = u.x[];
-            }
-        }
-    }
+double give_etas(double m_bp, double mindelta, double nu_min){
+    return sq(m_bp * mindelta) / nu_min;
 }
-#endif
-void brinkman_correction_u (vector u, double dt){
-#if BRINKMAN_PENALIZATION == 4
-    if (!is_constant(target_U.x)) calc_target_U(u, target_U, n_sol);
-#endif
-    foreach() {
-        foreach_dimension(){
-            u.x[] = (u.x[] + (fbp*dt/eta_s)*target_U.x[])/(1. + fbp*dt/eta_s);
-        }
-    }
-    boundary ((scalar *){u});
-}
-static int i_bpm=0;
-void brinkman_correction_uf (face vector uf){
 
-    //sticky way. Everything near 1 cell is fixed at the surface (or has velocity of the solid)
-#if STICKY_SOLID == 1
-    if (i_bpm==0) {fprintf(ferr, "Sticky solid. uf.x is corrected even for a partial solid inclusion.\n"); i_bpm++;}
-    foreach_face()
-        if ((uf.x[] - target_Uf.x[]) && (fs_face.x[] > 0))
-            uf.x[] = target_Uf.x[];
-    boundary ((scalar *){uf});
-    //Not sticky way. Only cells inside of solid has velocity target_Uf
-#elif NO_STICKY_SOLID == 1
-    if (i_bpm==0) {fprintf(ferr, "No sticky solid. uf.x is corrected only inside solids.\n"); i_bpm++;}
-    foreach_face()
-    if ((uf.x[] - target_Uf.x[]) && (fs_face.x[] <= 0))
-        uf.x[] = target_Uf.x[];
-    boundary ((scalar *){uf});
-#else //LINEAR_STICKINESS
-    if (i_bpm==0) {fprintf(ferr, "Linear stickiness. uf.x is corrected proportionally to the fs.\n"); i_bpm++;}
-    foreach_face() {
-        uf.x[] = (1 - fs_face.x[])*uf.x[] + fs_face.x[]*target_Uf.x[];
+double give_mbp(double eta_s, double mindelta, double nu_min){
+    return sqrt(eta_s * nu_min) / mindelta;
+}
+
+/**
+ * The Brinkman penalization method is used to simulate the flow around solid obstacles.
+ * The method is based on the introduction of a penalization term in the momentum equation.
+ * The penalization term depends on the kinematic viscosity of the fluid $\nu=\mu_1/\rho_1$ ,
+ * the penalization coefficient eta_s, and the penalization parameter m_bp - the number of mesh cells
+ * used to resolve the Brinkman penalization layer $\sqrt{\eta_s \nu}$.
+ */
+void set_penalization_parameters (face vector mu, scalar rho, double new_m_bp, double new_eta_s){
+    double nu_min = 1e+10, mindelta = 1e+10;
+    foreach( reduction(min:mindelta) reduction(min:nu_min) ){
+        if (Delta < mindelta) mindelta = Delta;
+        double nu = norm(mu) / rho[];
+        if (nu < nu_min) nu_min = nu;
     }
-    boundary((scalar *){uf});
-#endif
+
+    if (nu_min > SEPS) {
+        if (fabs(new_m_bp) > 0) { // m_bp has higher priority
+            m_bp = new_m_bp;
+            eta_s = give_etas(m_bp, mindelta, nu_min);
+        } else if (fabs(new_m_bp) == 0 && fabs(eta_s) < SEPS) { // nothing is set, m_bp = 1, eta_s(m_bp)
+            m_bp = 1;
+            eta_s = give_etas(m_bp, mindelta, nu_min);
+        } else { // only eta is set
+            eta_s = new_eta_s;
+            m_bp = give_mbp(eta_s, mindelta, nu_min);
+        }
+        fprintf(
+            ferr,
+            "Brinkman penalization params: eta_s=%g, m_bp=%g, minDelta=%g, nu_min=%g\n",
+            eta_s, m_bp, mindelta, nu_min
+        );
+    }
 }

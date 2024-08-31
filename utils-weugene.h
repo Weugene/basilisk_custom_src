@@ -170,6 +170,7 @@ void filter_scalar(scalar f, scalar sf){
             f[1,-1,1] + f[-1,1,1] + f[-1,1,-1] + f[1,1,1] +
             f[1,1,-1] + f[-1,-1,-1] + f[1,-1,-1] + f[-1,-1,1])/64.;
 #endif
+    boundary({sf});
 #if TREE
     sf.prolongation = refine_bilinear;
     sf.dirty = true; // boundary conditions need to be updated
@@ -182,6 +183,7 @@ void filter_scalar_N_times(scalar f, scalar sf, int N_smooth){
     for (int i_smooth=2; i_smooth<=N_smooth; i_smooth++){
         filter_scalar(sf, sf_s);
         foreach() sf[] = sf_s[];
+        boundary({sf});
     }
 }
 

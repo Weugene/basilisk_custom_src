@@ -1,35 +1,69 @@
-// The module is intended to solve the heat transfer equation, the polymerization effect and rheology changing
-// it is coupled with navier-stokes/centered-weugene.h module.
-// To correctly use this module you need to define:
-// - REACTION_MODEL not define or define as one of (REACTION_MODEL_NON_AUTOCATALYTIC, REACTION_MODEL_N_ORDER_AUTOCATALYTIC, 
-//      REACTION_MODEL_PROUT_TOMPKINS_AUTOCATALYTIC, NO_REACTION_MODEL)
-// - T_DIRICHLET_BC not define or define to 1
-// - m_bp_T - number of grid cells in Brinkamn layer, default is m_bp_T = 1
-// - eta_T - penalization coefficient, default is eta_T = sq(m_bp_T * mindelta) / chi_conductivity;
-// - viscDissipation should we consider viscous dissipation 
+/**
+This module is designed to solve the heat transfer equation,
+account for the effects of polymerization, and manage changes in rheology.
+It works in conjunction with the `navier-stokes/centered-weugene.h` module.
+
+Before including this module in your code,
+you need to define certain macro variables that specify the type of reaction model to be used.
+The `REACTION_MODEL` macro variable is used for this purpose.
+By default, the `NO_REACTION_MODEL` is selected, which means no specific reaction model is chosen.
+However, you have the option to select from three other models:
+
+1. `REACTION_MODEL_NON_AUTOCATALYTIC`: Represents a non-autocatalytic reaction model.
+2. `REACTION_MODEL_N_ORDER_AUTOCATALYTIC`: Represents an n-order autocatalytic reaction model.
+3. `REACTION_MODEL_PROUT_TOMPKINS_AUTOCATALYTIC`: Represents the Prout-Tompkins autocatalytic reaction model.
+
+These macros are used to conditionally compile parts of the code that are related to the selected reaction model.
+The model you choose will influence how the chemical reactions are simulated in the code.
+
+In addition, you need to define the `T_DIRICHLET_BC` macro variable,
+which specifies the type of boundary conditions on solids. This is not defined by default.
+
+After including this module in your code, you need to define the following variables:
+
+- `mbpT`: Specifies the number of grid cells in the Brinkman layer. The default value is 1.
+- `etaT`: Represents the penalization coefficient.
+ By default, it is calculated as the square of `mbpT` times the minimum grid cell size (`mindelta`),
+ divided by the thermal conductivity (`chi_conductivity`), sq(mbpT * mindelta) / chi_conductivity.
+- `viscDissipation`: Determines whether to consider viscous dissipation in the heat equation.
+ The default value is false, meaning viscous dissipation is not considered by default.
+ */
+
 #define HEAT_TRANSFER
 #define REACTION_MODEL_NON_AUTOCATALYTIC 1
 #define REACTION_MODEL_N_ORDER_AUTOCATALYTIC 2
 #define REACTION_MODEL_PROUT_TOMPKINS_AUTOCATALYTIC 3
 #define NO_REACTION_MODEL 4
 
+// User must define REACTION_MODEL
+#ifndef REACTION_MODEL
+    #error "REACTION_MODEL is not defined. Please define it as one of the allowed values."
+#endif
+
+// Check if REACTION_MODEL is one of the allowed values
+#if (REACTION_MODEL != REACTION_MODEL_NON_AUTOCATALYTIC) && \
+    (REACTION_MODEL != REACTION_MODEL_N_ORDER_AUTOCATALYTIC) && \
+    (REACTION_MODEL != REACTION_MODEL_PROUT_TOMPKINS_AUTOCATALYTIC) && \
+    (REACTION_MODEL != NO_REACTION_MODEL)
+    #error "Invalid REACTION_MODEL value. It must be one of the following: 1 (NON_AUTOCATALYTIC), 2 (N_ORDER_AUTOCATALYTIC), 3 (PROUT_TOMPKINS_AUTOCATALYTIC), 4 (NO_REACTION_MODEL)."
+#endif
+
 #include "three-phase-rheology.h"
 #include "diffusion-weugene.h"
 #include "dissipation.h"
-// const scalar const_temp_solid[] = 1.1;
 (const) scalar T_target = unity;
-double eta_T = 0;
-double m_bp_T = 0;
+double etaT = 0;
+double mbpT = 0;
 double chi_conductivity = 0;
 double Htr = 1;
-double K_cat = 1;
-double Arrhenius_const = 10;//1/s
-double Ea_by_R = 5;// Kelvin
-double n_degree = 1.667;
-double m_degree = 0.333;
+
+double TOLERANCE_T = 1e-9;
 bool viscDissipation = false;
-// If *stokes_heat* is set to *true*, the advection term in heat equation
-// $(\mathbf{u}\cdot\nabla)T$ and $(\mathbf{u}\cdot\nabla)\alpha_{doc}$ is omitted.
+
+/**
+If *stokes_heat* is set to *true*, the advection term in heat equation
+$(\mathbf{u}\cdot\nabla)T$ and $(\mathbf{u}\cdot\nabla)\alpha_{doc}$ is omitted.
+*/
 bool stokes_heat = false;
 double CFL_ARR = 0.3; // max changing of alpha in one timestep
 #undef SEPS
@@ -38,7 +72,7 @@ double CFL_ARR = 0.3; // max changing of alpha in one timestep
 scalar src_T[]; // source term for temperature
 
 #ifdef REACTION_MODEL
-scalar src_alpha_doc[]; // source term for degree of cure
+    scalar src_alpha_doc[]; // source term for degree of cure
 #endif
 
 /**
@@ -65,31 +99,37 @@ scalar src_alpha_doc[]; // source term for degree of cure
  * $R$ refers to the universal gas constant, and $T$ corresponds to the absolute temperature.
 
  */
-
-#define KT(T) ( Arrhenius_const*exp(-Ea_by_R/T) )
+double Arrhenius_const = 0;  // 1/s
+double Ea_by_R = 5; // Kelvin
+#define KT(T) ( Arrhenius_const*exp(-Ea_by_R/(T)) )
 #define dKT_dT(T) ( KT(T)*Ea_by_R/sq(T) )
 
 
 #if REACTION_MODEL == REACTION_MODEL_N_ORDER_AUTOCATALYTIC
+    double K_cat = 1;
+    double n_degree = 1.667;
     #define FR(alpha_doc) ( pow(1 - alpha_doc, n_degree)*(1 + K_cat*alpha_doc) )
     #define dFR_dalpha(alpha_doc) ( pow(1 - alpha_doc, n_degree)*( -n_degree/(1 - alpha_doc) + K_cat) )
     #define GENERAL_METHOD 1
 #elif REACTION_MODEL == REACTION_MODEL_PROUT_TOMPKINS_AUTOCATALYTIC
+    double n_degree = 1.667;
+    double m_degree = 0.333;
     #define FR(alpha_doc) ( pow(1 - alpha_doc, n_degree)*pow(alpha_doc, m_degree) )
     #define dFR_dalpha(alpha_doc) ( FR(alpha_doc) * ( -n_degree/(1 - alpha_doc) + m_degree/alpha_doc) )
     #define GENERAL_METHOD 1
 #else //REACTION_MODEL_NON_AUTOCATALYTIC
+    double n_degree = 1.667;
     #define FR(alpha_doc) ( pow(1 - alpha_doc, n_degree) )
     #define dFR_dalpha(alpha_doc) ( -n_degree * pow(1 - alpha_doc, n_degree - 1) )
     #define GENERAL_METHOD 0
 #endif
 
 /**
- * \rho C_p T_t = \nabla\kappa\nabla T^{n+1} + \rho_1 Q (1-\alpha^n)^{n_degree}\exp(-E_a/(RT^n))(1 - E_a/(R T^n) + E_a T^{n+1}/(R (T^n)^2)) - \rho C_p \chi\frac{T^{n+1}- T_0}{\eta_T}
+ * \rho C_p T_t = \nabla\kappa\nabla T^{n+1} + \rho_1 Q (1-\alpha^n)^{n_degree}\exp(-E_a/(RT^n))(1 - E_a/(R T^n) + E_a T^{n+1}/(R (T^n)^2)) - \rho C_p \chi\frac{T^{n+1}- T_0}{\etaT}
  * \thetav = \rho C_p
  * D = \kappav
- * beta = \rho_1 Q A (1-\alpha^n)^{n_degree} \exp(-E_a/(RT^n)) \frac{E_a}{R (T^n)^2} - \frac{\rho C_p \chi}{\eta_T}
- * r = \rho_1 Q A (1-\alpha^n)^{n_degree} \exp(-\frac{E_a}{RT^n})(1 - \frac{E_a}{RT^n}) + \frac{\rho C_p \chi T_0}{\eta_T}
+ * beta = \rho_1 Q A (1-\alpha^n)^{n_degree} \exp(-E_a/(RT^n)) \frac{E_a}{R (T^n)^2} - \frac{\rho C_p \chi}{\etaT}
+ * r = \rho_1 Q A (1-\alpha^n)^{n_degree} \exp(-\frac{E_a}{RT^n})(1 - \frac{E_a}{RT^n}) + \frac{\rho C_p \chi T_0}{\etaT}
  */
 
 event init (i = 0)
@@ -112,7 +152,7 @@ event init (i = 0)
 
 #if T_DIRICHLET_BC == 1 // indicator
         // Penalization term
-        src_T[] -= rhoCpv[] * fs[] * (T[] - T_target[])/eta_T;
+        src_T[] -= rhoCpv[] * fs[] * (T[] - T_target[])/etaT;
 #endif
     }
 }
@@ -136,7 +176,7 @@ event stability (i++) {
 }
 
 
-// In first 10 steps, eta_T and m_bp_T will be adjusted
+// In first 10 steps, etaT and mbpT will be adjusted
 event properties (i < 10){
     chi_conductivity = kappa1 / (rho1 * Cp1);
 
@@ -146,20 +186,20 @@ event properties (i < 10){
     }
 	fprintf(ferr, "chi_conductivity=%g\n", chi_conductivity);
     if (chi_conductivity) {
-        if (fabs(eta_T) > SEPS && fabs(m_bp_T) > 0) { // m_bp_T has higher priority
-            eta_T = sq(m_bp_T * mindelta) / chi_conductivity;
-        } else if (fabs(eta_T) < SEPS && fabs(m_bp_T) == 0) { // nothing is set
-            m_bp_T = 1;
-            eta_T = sq(m_bp_T * mindelta) / chi_conductivity;
-        } else if (fabs(eta_T) < SEPS && fabs(m_bp_T) > 0) { // m_bp_T is set
-            eta_T = sq(m_bp_T * mindelta) / chi_conductivity;
+        if (fabs(etaT) > SEPS && fabs(mbpT) > 0) { // mbpT has higher priority
+            etaT = sq(mbpT * mindelta) / chi_conductivity;
+        } else if (fabs(etaT) < SEPS && fabs(mbpT) == 0) { // nothing is set
+            mbpT = 1;
+            etaT = sq(mbpT * mindelta) / chi_conductivity;
+        } else if (fabs(etaT) < SEPS && fabs(mbpT) > 0) { // mbpT is set
+            etaT = sq(mbpT * mindelta) / chi_conductivity;
         } else { // only eta is set
-            m_bp_T = sqrt(eta_T * chi_conductivity) / mindelta;
+            mbpT = sqrt(etaT * chi_conductivity) / mindelta;
         }
-        fprintf(ferr, "Brinkman penalization params for the heat equation: eta_T=%g, m_bp_T=%g, minDelta=%g\n", eta_T, m_bp_T, mindelta);
+        fprintf(ferr, "Brinkman penalization params for the heat equation: etaT=%g, mbpT=%g, minDelta=%g\n", etaT, mbpT, mindelta);
     }else{
-		eta_T = 1e+15;
-		m_bp_T = 1e+8;
+		etaT = 1e+15;
+		mbpT = 1e+8;
 	}
 }
 
@@ -178,15 +218,17 @@ event chem_advection_term (i++){
 mgstats mgT;
 event chem_conductivity_term (i++){
     scalar r[], beta[];
+    double in_degree = 1.0 - n_degree;
     // Kinetic equation is solved implicitly due to a linearized source term
 #if REACTION_MODEL != NO_REACTION_MODEL //  POLYMERIZATION_REACTION
     foreach() {
         double alpha_doc_old = alpha_doc[];
 #if GENERAL_METHOD == 0 // analytical method for non-catalytic case
 // https://www.notion.so/polymerization-scheme-Semi-analytical-solution-for-non-autocatalytic-a00d5e73fb1b4c20b78c711ac17973e3?pvs=4
+// -in_degree is correct!
         alpha_doc[] = 1.0 - pow(
-                pow(fabs(1 - alpha_doc[]), 1 - n_degree) + (1.0 - n_degree) * dt * KT(T[]),
-            1.0/(1.0 - n_degree)); // direct integration from t to t + dt at fixed T^n
+                pow(fabs(1 - alpha_doc[]), in_degree) - in_degree * dt * KT(T[]),
+            1.0/in_degree); // direct integration from t to t + dt at fixed T^n
 //        alpha_doc[] = 1 - exp(log(fabs(1 - alpha_doc[])) - KT(T[]) * dt) if n_degree = 1
 #else // general method
 // Crank--Nicolson
@@ -202,6 +244,7 @@ event chem_conductivity_term (i++){
         //source and conductivity terms. f[] * (1 - fs[]) multiplications means gas and solids can't produce heat
         src_T[] = f[] * (1 - fs[]) * rho1 * Htr * src_alpha_doc[];
     }
+    boundary({alpha_doc, src_T, src_alpha_doc});
 #endif
     // considering the viscous dissipation
     if ((i>1000) && viscDissipation){
@@ -220,13 +263,13 @@ event chem_conductivity_term (i++){
 #endif
         // Penalization term
 #if T_DIRICHLET_BC == 1
-        r[] += fs[] * rhoCpv[] * T_target[] / eta_T;
-        beta[] += -fs[] * rhoCpv[] / eta_T;
+        r[] += fs[] * rhoCpv[] * T_target[] / etaT;
+        beta[] += -fs[] * rhoCpv[] / etaT;
 #endif
     }
 
     if (constant(kappa.x) != 0.) {
-        mgT = diffusion(T, dt, D = kappav, r = r, beta = beta, theta = rhoCpv);
+        mgT = diffusion(T, dt, tolerance = TOLERANCE_T, D = kappa, r = r, beta = beta, theta = rhoCpv);
 #ifdef DEBUG_HEAT
         fprintf (stderr, "mgT: i=%d t=%g dt=%g num of iterations T=%d\n", i, t, dt, mgT.i); //number of iterations
 #endif

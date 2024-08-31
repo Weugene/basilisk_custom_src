@@ -1,4 +1,4 @@
-    /**
+/**
 # Multigrid Poisson--Helmholtz solvers
 
 We want to solve Poisson--Helmholtz equations of the general form
@@ -59,9 +59,9 @@ void mg_cycle (scalar * a, scalar * res, scalar * da,
 
     if (l == minlevel)
       foreach_level_or_leaf (l)
-        for (scalar s in da)
+	for (scalar s in da)
 	  foreach_blockf (s)
-          s[] = 0.;
+	    s[] = 0.;
 
     /**
     On all other grids, we take as initial guess the approximate solution
@@ -69,9 +69,9 @@ void mg_cycle (scalar * a, scalar * res, scalar * da,
 
     else
       foreach_level (l)
-        for (scalar s in da)
+	for (scalar s in da)
 	  foreach_blockf (s)
-          s[] = bilinear (point, s);
+	    s[] = bilinear (point, s);
 
     /**
     We then apply homogeneous boundary conditions and do several
@@ -91,7 +91,7 @@ void mg_cycle (scalar * a, scalar * res, scalar * da,
     scalar s, ds;
     for (s, ds in a, da)
       foreach_blockf (s)
-      s[] += ds[];
+	s[] += ds[];
   }
 }
 
@@ -107,6 +107,7 @@ tolerance by *TOLERANCE* with the default values below. */
 
 int NITERMAX = 100, NITERMIN = 1;
 double TOLERANCE = 1e-3 [*];
+double TOLERANCE_P = 1e-7 [*];
 double RELATIVE_RES_TOLERANCE = 0.1;
 /**
 Information about the convergence of the solver is returned in a structure. */
@@ -129,9 +130,9 @@ level of the hierarchy can be set (default is zero i.e. the root
 cell). */
 
 mgstats mg_solve (scalar * a, scalar * b,
-  double (* residual) (scalar * a, scalar * b, scalar * res,
+		  double (* residual) (scalar * a, scalar * b, scalar * res,
 				       void * data),
-  void (* relax) (scalar * da, scalar * res, int depth,
+		  void (* relax) (scalar * da, scalar * res, int depth,
 				  void * data),
 		  void * data = NULL,
 		  int nrelax = 4,
@@ -173,7 +174,7 @@ mgstats mg_solve (scalar * a, scalar * b,
 
   double resb;
   resb = s.resb = s.resa = (* residual) (a, b, res, data);
-
+  fprintf(ferr, "\nInit RESb: %g\n", resb);
   /**
   We then iterate until convergence or until *NITERMAX* is reached. Note
   also that we force the solver to apply at least one cycle, even if the
@@ -202,9 +203,9 @@ mgstats mg_solve (scalar * a, scalar * b,
 #if 1
     if (s.resa > tolerance) {
       if (resb/s.resa < 1.2 && s.nrelax < 100)
-	    s.nrelax++;
+	s.nrelax++;
       else if (resb/s.resa > 10 && s.nrelax > 2)
-	    s.nrelax--;
+	s.nrelax--;
     }
 #else
     if (s.resa == resb) /* convergence has stopped!! */
@@ -214,6 +215,7 @@ mgstats mg_solve (scalar * a, scalar * b,
 #endif
 
     resb = s.resa;
+    fprintf(ferr, "RESb: %g RESA: %g\n", resb, s.resa);
 //break if resudual does not change. Weugene correction
 #ifdef RELATIVE_RESIDUAL
       double res1 = 0.5*(res_previous1+res_previous2);
@@ -461,8 +463,8 @@ mgstats poisson (scalar a, scalar b,
   double defaultol = TOLERANCE;
   if (tolerance)
     TOLERANCE = tolerance;
-
-  struct Poisson p = {a, b, alpha, lambda, tolerance, nrelax, minlevel, res };
+  double maxb = 1;
+  struct Poisson p = {a, b, alpha, lambda, tolerance, nrelax, minlevel, res, maxb};
 #if EMBED
   if (!flux && a.boundary[embed] != symmetry)
     p.embed_flux = embed_flux;
@@ -470,7 +472,7 @@ mgstats poisson (scalar a, scalar b,
     p.embed_flux = flux;
 #endif // EMBED
   if (relative_residual_poisson) {
-    double maxb = 0;
+    maxb = 0;
     foreach(reduction(max:maxb)){
       if (fabs(b[]) > maxb) maxb = fabs(b[]);
     }
@@ -479,8 +481,8 @@ mgstats poisson (scalar a, scalar b,
   }else{
     p.maxb = 1;
   }
-        mgstats s = mg_solve ({a}, {b}, residual, relax, &p,
-                              nrelax, res, max(1, minlevel));
+  mgstats s = mg_solve ({a}, {b}, residual, relax, &p,
+			nrelax, res, max(1, minlevel), tolerance);
 
   /**
   We restore the default. */
@@ -532,7 +534,7 @@ mgstats project (face vector uf, scalar p,
     }
 
     /**
-    We solve the Poisson problem. The tolerance (set with *TOLERANCE*) is
+    We solve the Poisson problem. The tolerance (set with *TOLERANCE_P*) is
     the maximum relative change in volume of a cell (due to the divergence
     of the flow) during one timestep i.e. the non-dimensional quantity
     $$
@@ -542,9 +544,9 @@ mgstats project (face vector uf, scalar p,
 // res=div(u + u*)/dt - laplace p
 // res=div(u*)/dt - laplace delta p ~ dt
     mgstats mgp = poisson (p, div , alpha,
-                   tolerance = TOLERANCE, nrelax = nrelax);
+                   tolerance = TOLERANCE_P, nrelax = nrelax);
 //        mgstats mgp = poisson (p, div, alpha,
-//                   tolerance = TOLERANCE/sq(dt), nrelax = nrelax);
+//                   tolerance = TOLERANCE_P/sq(dt), nrelax = nrelax);
 
     /**
     And compute $\mathbf{u}_f^{n+1}$ using $\mathbf{u}_f$ and $p$. */

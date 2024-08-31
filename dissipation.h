@@ -10,7 +10,7 @@ struct Dissipation {
 };
 
 /**
-This function compute source term due to viscous heat generation: 
+This function compute the source term due to viscous heat generation:
 $q_v = \mu\left( \grad \mathbf{u} + (\grad \mathbf{u})^T\right) : \grad \mathbf{u}$.
 The viscous dissipation term $\Phi$ in a three-dimensional incompressible fluid, expressed in LaTeX code, is:
 \Phi = \mu \left( 
@@ -21,8 +21,8 @@ The viscous dissipation term $\Phi$ in a three-dimensional incompressible fluid,
     \left(\frac{\partial u}{\partial z} + \frac{\partial w}{\partial x}\right)^2 + 
     \left(\frac{\partial v}{\partial z} + \frac{\partial w}{\partial y}\right)^2 
 \right)
-Note: by default it nullifies the source term. Also it works only in case of incompressibility. 
-For compressible case it needs to add 
+Note: by default it nullifies the source term. Also, it works only in case of incompressible flow.
+For compressible case it needs to add
 $-\frac23\mu\left( \frac{\partial u}{\partial x} + \frac{\partial v}{\partial y} + \frac{\partial w}{\partial z}\right)$
 */
 void dissipation (scalar dis, (const) vector u, (const) face vector mu, bool dump_dis = true)
@@ -36,9 +36,9 @@ void dissipation (scalar dis, (const) vector u, (const) face vector mu, bool dum
     }
 
     foreach_dimension() {
-        face vector taux[];
+        face vector taugradu[];
         foreach_face(x) {
-            taux.x[] =  2.*mu.x[]*sq((u.x[] - u.x[-1])/Delta);
+            taugradu.x[] =  2.*mu.x[]*sq((u.x[] - u.x[-1])/Delta);
         }
         #if dimension > 1
         /**
@@ -46,7 +46,7 @@ void dissipation (scalar dis, (const) vector u, (const) face vector mu, bool dum
         mu.y[]*((u.x[] - u.x[0,-1])/Delta) * ((u.x[] - u.x[0,-1])/Delta + ((u.y[1,-1] + u.y[1,0])/2 - (u.y[-1,-1] + u.y[-1,0])/2)/(2*Delta))
         */
         foreach_face(y)
-            taux.y[] = mu.y[]*(u.x[] - u.x[0,-1] +
+            taugradu.y[] = mu.y[]*(u.x[] - u.x[0,-1] +
                    (u.y[1,-1] + u.y[1,0])/4. -
                    (u.y[-1,-1] + u.y[-1,0])/4.)
                   *(u.x[] - u.x[0,-1])/sq(Delta);
@@ -54,10 +54,10 @@ void dissipation (scalar dis, (const) vector u, (const) face vector mu, bool dum
         #if dimension > 2
         /**
         $\mu_z \left( \frac{\partial u}{\partial z}\right) \left( \frac{\partial u}{\partial z} + \frac{\partial w}{\partial x}\right)$
-        mu.y[]*((u.x[] - u.x[0,0,-1])/Delta) * ((u.x[] - u.x[0,0,-1])/Delta + ((u.y[1,0,-1] + u.y[1,0,0])/2 - (u.y[-1,0,-1] + u.y[-1,0,0])/2)/(2*Delta))
+        mu.z[]*((u.x[] - u.x[0,0,-1])/Delta) * ((u.x[] - u.x[0,0,-1])/Delta + ((u.z[1,0,-1] + u.z[1,0,0])/2 - (u.z[-1,0,-1] + u.z[-1,0,0])/2)/(2*Delta))
         */
         foreach_face(z)
-            taux.z[] = mu.z[]*(u.x[] - u.x[0,0,-1] +
+            taugradu.z[] = mu.z[]*(u.x[] - u.x[0,0,-1] +
                    (u.z[1,0,-1] + u.z[1,0,0])/4. -
                    (u.z[-1,0,-1] + u.z[-1,0,0])/4.)
                   *(u.x[] - u.x[0,0,-1])/sq(Delta);
@@ -66,7 +66,7 @@ void dissipation (scalar dis, (const) vector u, (const) face vector mu, bool dum
             // average values laying on faces into cell center
             double d = 0;
             foreach_dimension()
-                d += (taux.x[1] + taux.x[]);
+                d += (taugradu.x[1] + taugradu.x[]);
             dis[] += d/(2.*dimension); // average over all faces
         }
     }

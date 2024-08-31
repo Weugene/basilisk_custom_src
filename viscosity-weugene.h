@@ -60,6 +60,7 @@ struct Viscosity {
 #undef SEPS
 #define SEPS 1e-12
 bool relative_residual_viscous = false;
+double TOLERANCE_V = 1e-7 [*];
 #ifdef DEBUG_BRINKMAN_PENALIZATION
     vector divtauu[]; // added: Weugene
 #endif
@@ -278,6 +279,7 @@ static double residual_viscosity (scalar * a, scalar * b, scalar * resl, void * 
             }
             divtauu.x[] = d/Delta;
         }
+        boundary({divtauu});
     }
 
     foreach (reduction(max:maxres)) {
@@ -360,10 +362,11 @@ mgstats viscosity (vector u, face vector mu, scalar rho, double dt,
     The velocity field $\boldsymbol{u}_n$ is provided as an initial
     guess $\tilde{\boldsymbol{a}}$. */
     vector r[];
-    foreach()
+    foreach() {
         foreach_dimension()
             r.x[] = u.x[] + (PLUS_CONSTANT_BRINKMAN_RHS) * dt; // the RHS of the equation: Lu=b
-
+    }
+    boundary({r});
     /**
     We need $\mu$ and $\rho$ on all levels of the grid. */
 
@@ -374,7 +377,6 @@ mgstats viscosity (vector u, face vector mu, scalar rho, double dt,
             if (fabs(r.x[]) > maxb) maxb = fabs(r.x[]);
         }
         if (maxb < SEPS) maxb = 1;
-
     }else{
         maxb = 1.0;
     }
@@ -383,7 +385,7 @@ mgstats viscosity (vector u, face vector mu, scalar rho, double dt,
     fprintf(ferr, "visc max|RHS| = %g\n", p.maxb);
 #endif
     return mg_solve ((scalar *){u}, (scalar *){r},
-                     residual_viscosity, relax_viscosity, &p, nrelax, res);
+                     residual_viscosity, relax_viscosity, &p, nrelax, res, tolerance=TOLERANCE_V);
 }
 
 /**

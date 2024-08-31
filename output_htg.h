@@ -232,20 +232,20 @@ void output_htg(scalar * list, vector * vlist, const char* path, char* prefix, i
 		exit(1);
 	}
   
-  output_htg_data((scalar *) list,(vector *) vlist, fp);
+    output_htg_data((scalar *) list,(vector *) vlist, fp);
 
-  fclose(fp);
+    fclose(fp);
 
-  bool firstTimeWritten = false;
-  char pvd_name[80];	  
-  sprintf(pvd_name,"%s.pvd", prefix);
-  fp = fopen(pvd_name, "r+");
-  if( (iter_fp == 0) ||  (fp == NULL) ) {
+    bool firstTimeWritten = false;
+    char pvd_name[80];
+    sprintf(pvd_name,"%s.pvd", prefix);
+    fp = fopen(pvd_name, "r+");
+    if( (iter_fp == 0) ||  (fp == NULL) ) {
     fp = fopen(pvd_name,"w");
     firstTimeWritten = true;
-  }
-  output_pvd(htg_name, t, fp, firstTimeWritten);
-  fclose(fp);
+    }
+    output_pvd(htg_name, t, fp, firstTimeWritten);
+    fclose(fp);
 #ifdef DEBUG_OUTPUT_VTU_MPI
     fprintf (ferr, "iter_fp: %d t=%g dt=%g\n", iter_fp, t, dt);
 #endif

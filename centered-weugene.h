@@ -51,7 +51,7 @@ The primary variables are the centered pressure field $p$ and the
 centered velocity field $\mathbf{u}$. The centered vector field
 $\mathbf{g}$ will contain pressure gradients and acceleration terms.
 
-We will also need an auxilliary face velocity field $\mathbf{u}_f$ and
+We will also need an auxiliary face velocity field $\mathbf{u}_f$ and
 the associated centered pressure field $p_f$. */
 
 scalar p[];
@@ -72,21 +72,21 @@ The face field $\mathbf{a}$ defines the acceleration term; default is
 zero.
 
 The statistics for the (multigrid) solution of the pressure Poisson
-problems and implicit viscosity are stored in *mgp*, *mgpf*, *mgu*
+problems and implicit viscosity are stored in *mgp*, *mgpf*, *mgu*, *mguT*
 respectively.
 
 If *stokes* is set to *true*, the velocity advection term
 $\nabla\cdot(\mathbf{u}\otimes\mathbf{u})$ is omitted. This is a
 reference to [Stokes flows](http://en.wikipedia.org/wiki/Stokes_flow)
 for which inertia is negligible compared to viscosity.
-If *chorin_modified* is *true*, then Chorin's correction step considers solids.
+If *chorinmod* is *true*, then modified Chorin's correction with solid consideration is applied.
 */
 
 (const) face vector mu = zerof, a = zerof, alpha = unityf, kappa = zerof, alpham = unityf;
 (const) scalar rho = unity, rhoCp = unity;
-mgstats mgp = {0}, mgpf = {0}, mgu = {0};
+mgstats mgp = {0}, mgpf = {0}, mgu = {0}, mguT = {0};
 bool stokes = false;
-bool chorin_modified = false;
+bool chorinmod = false;
 /**
 ## Boundary conditions
 
@@ -165,7 +165,7 @@ event defaults (i = 0)
       alphamv.x[] = fm.x[];
     }
   }
-  if (!chorin_modified)
+  if (!chorinmod)
     alpham = alpha;
   /**
   On trees, refinement of the face-centered velocity field needs to
@@ -232,6 +232,8 @@ event init (i = 0)
   event ("stability");
 
 }
+
+event set_penalization (i++,last);
 
 /**
 After initialization of all initial variables, we output file */
@@ -357,11 +359,11 @@ field. */
 
 event advection_term (i++,last)
 {
-  if (!stokes) {
-    prediction();
-    mgpf = project (uf, pf, alpham, dt/2., mgpf.nrelax);
-    advection ((scalar *){u}, uf, dt, (scalar *){g}); // original version
-  }
+    if (!stokes) {
+        prediction();
+        mgpf = project (uf, pf, alpham, dt/2., mgpf.nrelax);
+        advection ((scalar *){u}, uf, dt, (scalar *){g}); // original version
+    }
 }
 /**
  *  Advection of the temperature and polymerization fields

@@ -38,7 +38,7 @@ Note that the `r`, $\beta$ and $\theta$ fields will be modified by the solver.
 The function returns the statistics of the Poisson solver. */
 
 trace
-mgstats diffusion (scalar f, double dt,
+mgstats diffusion (scalar f, double dt, double tolerance,
 		   face vector D = {{-1}},  // default 1
 		   scalar r = {-1},         // default 0
 		   scalar beta = {-1},      // default 0
@@ -91,5 +91,5 @@ mgstats diffusion (scalar f, double dt,
   /**
   Finally we solve the system. */
 
-  return poisson (f, ar, D, lambda);
+  return poisson (f, ar, D, lambda, tolerance=tolerance);
 }

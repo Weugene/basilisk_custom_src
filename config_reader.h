@@ -121,7 +121,7 @@ struct numerical_params {
     double DT;
     double maxDT;
     double m_bp;
-    double m_bp_T;
+    double mbpT;
     double feps;
     double ueps;
     double rhoeps;
@@ -129,7 +129,7 @@ struct numerical_params {
     double aeps;
     double mueps;
     int viscDissipation;
-    int chorin_modified;
+    int chorinmod;
 };
 
 struct input_yaml {
@@ -243,7 +243,7 @@ static const cyaml_schema_field_t numerical_params_fields[] = {
         CYAML_FIELD_FLOAT("maxDT", CYAML_FLAG_OPTIONAL, struct numerical_params, maxDT),
         CYAML_FIELD_FLOAT("DT", CYAML_FLAG_DEFAULT, struct numerical_params, DT),
         CYAML_FIELD_FLOAT("m_bp", CYAML_FLAG_OPTIONAL, struct numerical_params, m_bp),
-        CYAML_FIELD_FLOAT("m_bp_T", CYAML_FLAG_OPTIONAL, struct numerical_params, m_bp_T),
+        CYAML_FIELD_FLOAT("mbpT", CYAML_FLAG_OPTIONAL, struct numerical_params, mbpT),
         CYAML_FIELD_FLOAT("feps", CYAML_FLAG_OPTIONAL, struct numerical_params, feps),
         CYAML_FIELD_FLOAT("ueps", CYAML_FLAG_OPTIONAL, struct numerical_params, ueps),
         CYAML_FIELD_FLOAT("rhoeps", CYAML_FLAG_OPTIONAL, struct numerical_params, rhoeps),
@@ -251,7 +251,7 @@ static const cyaml_schema_field_t numerical_params_fields[] = {
         CYAML_FIELD_FLOAT("aeps", CYAML_FLAG_OPTIONAL, struct numerical_params, aeps),
         CYAML_FIELD_FLOAT("mueps", CYAML_FLAG_OPTIONAL, struct numerical_params, mueps),
         CYAML_FIELD_FLOAT("viscDissipation", CYAML_FLAG_OPTIONAL, struct numerical_params, viscDissipation),
-        CYAML_FIELD_FLOAT("chorin_modified", CYAML_FLAG_OPTIONAL, struct numerical_params, chorin_modified),
+        CYAML_FIELD_FLOAT("chorinmod", CYAML_FLAG_OPTIONAL, struct numerical_params, chorinmod),
         CYAML_FIELD_END
 };
 
@@ -411,7 +411,7 @@ struct input_yaml* read_config(int argc, char *argv[])
     if (!input->num_params.CFL_ARR) numpar->CFL_ARR = 0.5;
     if (!input->num_params.maxDT) numpar->maxDT = 1e+10;
     if (!input->num_params.m_bp) numpar->m_bp = 2.0;
-    if (!input->num_params.m_bp_T) numpar->m_bp_T = 2.0;
+    if (!input->num_params.mbpT) numpar->mbpT = 2.0;
     if (!input->num_params.feps) numpar->feps = 1e-10;
     if (!input->num_params.ueps) numpar->ueps = 1e-2;
     if (!input->num_params.rhoeps) numpar->rhoeps = 1e-10;
@@ -419,7 +419,7 @@ struct input_yaml* read_config(int argc, char *argv[])
     if (!input->num_params.aeps) numpar->aeps = 1e-2;
     if (!input->num_params.mueps) numpar->mueps = 1e-2;
     if (!input->num_params.viscDissipation) numpar->viscDissipation = 0;
-    if (!input->num_params.chorin_modified) numpar->chorin_modified = 0;
+    if (!input->num_params.chorinmod) numpar->chorinmod = 0;
 
     fprintf(fout, "%s============ Dimensional params ============\n%s", KRED, KNRM);
     fprintf(fout, "characteristic_size=%g [m] ", dv->characteristic_size);
@@ -488,11 +488,11 @@ struct input_yaml* read_config(int argc, char *argv[])
     fprintf(fout, "NITERMIN=%d NITERMAX=%d\n", numpar->NITERMIN, numpar->NITERMAX);
     fprintf(fout, "CFL=%g CFL_ARR=%g\n", numpar->CFL, numpar->CFL_ARR);
     fprintf(fout, "DT=%g maxDT=%g\n", numpar->DT, numpar->maxDT);
-    fprintf(fout, "m_bp=%g m_bp_T=%g\n", numpar->m_bp, numpar->m_bp_T);
+    fprintf(fout, "m_bp=%g mbpT=%g\n", numpar->m_bp, numpar->mbpT);
     fprintf(fout, "layer_velocity=%g layer_heat=%g\n", 1.0/sqrt(input->nums.Re), 1.0/sqrt(input->nums.Pe));
     fprintf(fout, "feps=%g ueps=%g rhoeps=%g Teps=%g aeps=%g mueps=%g\n", numpar->feps, numpar->ueps, numpar->rhoeps, numpar->Teps, numpar->aeps, numpar->mueps);
     fprintf(fout, "viscDissipation=%s\n", numpar->viscDissipation ? "true" : "false");
-    fprintf(fout, "chorin_modified=%s\n", numpar->chorin_modified ? "true" : "false");
+    fprintf(fout, "chorinmod=%s\n", numpar->chorinmod ? "true" : "false");
 
     /* Free the data */
 //    cyaml_free(&config, &top_schema, input, 0);
@@ -522,7 +522,7 @@ struct input_yaml* read_config_and_assign_global_vars(int argc, char *argv[])
     aeps = input->num_params.aeps;
     mueps = input->num_params.mueps;
     viscDissipation = input->num_params.viscDissipation;
-    chorin_modified = input->num_params.chorin_modified;
+    chorinmod = input->num_params.chorinmod;
     TOLERANCE = input->num_params.TOLERANCE;
     TOLERANCE_P = input->num_params.TOLERANCE_P;
     TOLERANCE_V = input->num_params.TOLERANCE_V;
@@ -566,7 +566,7 @@ struct input_yaml* read_config_and_assign_global_vars(int argc, char *argv[])
     layer_velocity = 1.0/sqrt(input->nums.Re);
     layer_heat = 1.0/sqrt(input->nums.Pe);
     m_bp = input->num_params.m_bp;
-    m_bp_T = input->num_params.m_bp_T;
+    mbpT = input->num_params.mbpT;
     domain_size = input->ndv.domain_size;
     mindelta = domain_size/pow(2, maxlevel);
 
@@ -587,7 +587,7 @@ struct input_yaml* read_config_and_assign_global_vars(int argc, char *argv[])
 
     chi_conductivity = kappa1 / (rho1 * Cp1);
     eta_s = sq(m_bp*mindelta)/(mu1/rho1);
-    eta_T = sq(m_bp_T*mindelta)/chi_conductivity;
+    etaT = sq(mbpT*mindelta)/chi_conductivity;
 
     Htr = input->ndv.Htr;
     Arrhenius_const = input->ndv.Arrhenius_const;

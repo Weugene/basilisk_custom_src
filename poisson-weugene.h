@@ -174,7 +174,7 @@ mgstats mg_solve (scalar * a, scalar * b,
 
   double resb;
   resb = s.resb = s.resa = (* residual) (a, b, res, data);
-  fprintf(ferr, "\nInit RESb: %g\n", resb);
+//  fprintf(ferr, "\nInit RESb: %g\n", resb);
   /**
   We then iterate until convergence or until *NITERMAX* is reached. Note
   also that we force the solver to apply at least one cycle, even if the
@@ -215,7 +215,7 @@ mgstats mg_solve (scalar * a, scalar * b,
 #endif
 
     resb = s.resa;
-    fprintf(ferr, "RESb: %g RESA: %g\n", resb, s.resa);
+//    fprintf(ferr, "RESb: %g RESA: %g\n", resb, s.resa);
 //break if resudual does not change. Weugene correction
 #ifdef RELATIVE_RESIDUAL
       double res1 = 0.5*(res_previous1+res_previous2);

@@ -87,9 +87,10 @@ double give_mbp(double eta_s, double mindelta, double nu_min){
  * used to resolve the Brinkman penalization layer $\sqrt{\eta_s \nu}$.
  */
 void set_penalization_parameters (face vector mu, scalar rho, double new_m_bp, double new_eta_s){
-    double nu_min = 1e+10, mindelta = 1e+10;
-    foreach( reduction(min:mindelta) reduction(min:nu_min) ){
-        if (Delta < mindelta) mindelta = Delta;
+    int maxlevel = grid->maxdepth;
+    double mindelta = L0 / (1 << maxlevel);
+    double nu_min = 1e+10;
+    foreach( reduction(min:nu_min) ){
         double nu = norm(mu) / rho[];
         if (nu < nu_min) nu_min = nu;
     }
@@ -107,7 +108,7 @@ void set_penalization_parameters (face vector mu, scalar rho, double new_m_bp, d
         }
         fprintf(
             ferr,
-            "Brinkman penalization params: eta_s=%g, m_bp=%g, minDelta=%g, nu_min=%g\n",
+            "Brinkman penalization params for u: eta_s=%g, m_bp=%g, minDelta=%g, nu_min=%g\n",
             eta_s, m_bp, mindelta, nu_min
         );
     }

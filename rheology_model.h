@@ -51,6 +51,7 @@ After including this module in your code, you need to define the following varia
 #include "three-phase-rheology.h"
 #include "diffusion-weugene.h"
 #include "dissipation.h"
+#include "aslam.h"
 (const) scalar T_target = unity;
 double etaT = 0;
 double mbpT = 0;
@@ -124,6 +125,36 @@ double Ea_by_R = 5; // Kelvin
     #define GENERAL_METHOD 0
 #endif
 
+void set_heat_penalization_parameters(double new_m_bp, double new_eta_T, double new_chi_conductivity){
+    // Access the maximum refinement level
+    int maxlevel = grid->maxdepth;
+    double mindelta = L0 / (1 << maxlevel);
+    if (new_chi_conductivity) {
+        if (fabs(new_m_bp) > 0) { // new_m_bp has higher priority even if new_eta_T is set
+            mbpT = new_m_bp;
+            etaT = give_etas(mbpT, mindelta, new_chi_conductivity);
+        } else if (fabs(new_eta_T) < SEPS && fabs(new_m_bp) == 0) { // nothing is set
+            mbpT = 1;
+            etaT = give_etas(mbpT, mindelta, new_chi_conductivity);
+        } else { // only eta is set
+            etaT = new_eta_T;
+            mbpT = give_mbp(etaT, mindelta, new_chi_conductivity);
+        }
+        fprintf(
+                ferr,
+                "Brinkman penalization params for the heat equation: etaT=%g, mbpT=%g, minDelta=%g chi_conductivity=%g\n",
+                etaT, mbpT, mindelta, chi_conductivity
+        );
+    }else{
+        etaT = 1e+15;
+        mbpT = 1e+8;
+    }
+}
+
+void update_T_target(scalar levelset, scalar T_target, double cfl, int nmax){
+    linear_extrapolation (f=T_target, ls=levelset, cfl=cfl, nmax=nmax);
+}
+
 /**
  * \rho C_p T_t = \nabla\kappa\nabla T^{n+1} + \rho_1 Q (1-\alpha^n)^{n_degree}\exp(-E_a/(RT^n))(1 - E_a/(R T^n) + E_a T^{n+1}/(R (T^n)^2)) - \rho C_p \chi\frac{T^{n+1}- T_0}{\etaT}
  * \thetav = \rho C_p
@@ -140,6 +171,7 @@ event init (i = 0)
     foreach(){
         src_T[] = 0;
     }
+    boundary({src_T});
     if (viscDissipation && (i > 1000)){
         dissipation (dis=src_T, u=u, mu=mu, dump_dis=true);
     }
@@ -150,57 +182,36 @@ event init (i = 0)
         src_T[] += rho1 * Htr * f[] * (1 - fs[]) * src_alpha_doc[];
 #endif
 
-#if T_DIRICHLET_BC == 1 // indicator
+#if T_DIRICHLET_BC == 1 // indicator TODO: maybe no need to include?
         // Penalization term
         src_T[] -= rhoCpv[] * fs[] * (T[] - T_target[])/etaT;
 #endif
     }
+    boundary({src_T, src_alpha_doc});
+    double new_m_bp = 1;
+    double new_eta_T = 0;
+    double new_chi_conductivity = kappa1 / (rho1 * Cp1);
+    set_heat_penalization_parameters(new_m_bp, new_eta_T, new_chi_conductivity);
 }
 
 
 // integration time step
 event stability (i++) {
-    // If it will be considered in hydrodynamic advection step, then no need to compute in heat advection step
-    if (stokes)
+    // If it is considered in hydrodynamic advection step, then no need to compute in heat advection step
+    if (!stokes_heat)
         dt = dtnext (stokes_heat ? dtmax : timestep (uf, dtmax));
-    fprintf(ferr, "TIME heat advection: t=%g tnext=%g dt=%g DT=%g dtmax=%g stokes_heat=%d\n",
-            t, tnext, dt, DT, dtmax, stokes_heat );
-    if (i % 10 == 0){
-        double dt_Arr_min = 1e+10;
-        foreach( reduction(min:dt_Arr_min)){
-            dt_Arr_min = CFL_ARR / (KT(T[]) * dFR_dalpha(alpha_doc[]) + SEPS);
-        }
-        dt = min(dt, dt_Arr_min);
-        fprintf(ferr, "dt_Arr=%g min(dt,dt_arr)=%g\n", dt_Arr_min, dt);
+    fprintf(
+        ferr, "TIME heat advection: t=%g tnext=%g dt=%g DT=%g dtmax=%g stokes_heat=%d\n",
+        t, tnext, dt, DT, dtmax, stokes_heat
+    );
+
+    double dt_Arr_min = 1e+10;
+    foreach( reduction(min:dt_Arr_min)){
+        dt_Arr_min = 2.0 * CFL_ARR / (KT(T[]) * fabs(dFR_dalpha(alpha_doc[])) + SEPS);
     }
-}
+    dt = min(dt, dt_Arr_min);
+    fprintf(ferr, "dt_Arr=%g updated dt=%g\n", dt_Arr_min, dt);
 
-
-// In first 10 steps, etaT and mbpT will be adjusted
-event properties (i < 10){
-    chi_conductivity = kappa1 / (rho1 * Cp1);
-
-    double mindelta=1e+10;
-    foreach( reduction(min:mindelta) ){
-        if (Delta < mindelta) mindelta = Delta;
-    }
-	fprintf(ferr, "chi_conductivity=%g\n", chi_conductivity);
-    if (chi_conductivity) {
-        if (fabs(etaT) > SEPS && fabs(mbpT) > 0) { // mbpT has higher priority
-            etaT = sq(mbpT * mindelta) / chi_conductivity;
-        } else if (fabs(etaT) < SEPS && fabs(mbpT) == 0) { // nothing is set
-            mbpT = 1;
-            etaT = sq(mbpT * mindelta) / chi_conductivity;
-        } else if (fabs(etaT) < SEPS && fabs(mbpT) > 0) { // mbpT is set
-            etaT = sq(mbpT * mindelta) / chi_conductivity;
-        } else { // only eta is set
-            mbpT = sqrt(etaT * chi_conductivity) / mindelta;
-        }
-        fprintf(ferr, "Brinkman penalization params for the heat equation: etaT=%g, mbpT=%g, minDelta=%g\n", etaT, mbpT, mindelta);
-    }else{
-		etaT = 1e+15;
-		mbpT = 1e+8;
-	}
 }
 
 
@@ -224,17 +235,17 @@ event chem_conductivity_term (i++){
     foreach() {
         double alpha_doc_old = alpha_doc[];
 #if GENERAL_METHOD == 0 // analytical method for non-catalytic case
-// https://www.notion.so/polymerization-scheme-Semi-analytical-solution-for-non-autocatalytic-a00d5e73fb1b4c20b78c711ac17973e3?pvs=4
-// -in_degree is correct!
+        // https://www.notion.so/polymerization-scheme-Semi-analytical-solution-for-non-autocatalytic-a00d5e73fb1b4c20b78c711ac17973e3?pvs=4
+        // -in_degree is correct!
         alpha_doc[] = 1.0 - pow(
                 pow(fabs(1 - alpha_doc[]), in_degree) - in_degree * dt * KT(T[]),
             1.0/in_degree); // direct integration from t to t + dt at fixed T^n
-//        alpha_doc[] = 1 - exp(log(fabs(1 - alpha_doc[])) - KT(T[]) * dt) if n_degree = 1
+        // alpha_doc[] = 1 - exp(log(fabs(1 - alpha_doc[])) - KT(T[]) * dt) if n_degree = 1
 #else // general method
-// Crank--Nicolson
-//        alpha_doc[] = (alpha_doc[] + 0.5 * dt * KT(T[]) * (2.0 * FR(alpha_doc[]) - dFR_dalpha(alpha_doc[]) * alpha_doc[])) /
-//                          (1 - 0.5 * dt * KT(T[]) * dFR_dalpha(alpha_doc[]));
-// Backward Euler
+        // Crank--Nicolson
+        //        alpha_doc[] = (alpha_doc[] + dt * KT(T[]) * (FR(alpha_doc[]) - 0.5 * dFR_dalpha(alpha_doc[]) * alpha_doc[])) /
+        //                          (1 - 0.5 * dt * KT(T[]) * dFR_dalpha(alpha_doc[]));
+        // Backward Euler
         alpha_doc[] = (alpha_doc[] + dt * KT(T[]) * ( FR(alpha_doc[]) - dFR_dalpha(alpha_doc[]) * alpha_doc[])) /
                           (1 - dt * KT(T[]) * dFR_dalpha(alpha_doc[]));
 #endif
@@ -276,6 +287,21 @@ event chem_conductivity_term (i++){
     }else{ // kappa=0
         foreach(){
             T[] = (rhoCpv[] * T[] + dt * r[])/(rhoCpv[] - dt * beta[]);
+        }
+    }
+    // recalculate viscosity with new T, alpha_doc
+    foreach_face() {
+        double ff1 = face_value (sf1, 0); // liquid fraction on face
+        double ff2 = face_value (sf2, 0); // solid fraction on face
+        if (mu1 || mu2) {
+            face vector muv = mu;
+            double Tf = face_value (T, 0); // temperature on face
+#if REACTION_MODEL != NO_REACTION_MODEL
+            double alpha_doc_f = face_value (alpha_doc, 0); // degree of cure on face
+            muv.x[] = fm.x[]*mu(ff1, ff2, alpha_doc_f, Tf);
+#else
+            muv.x[] = fm.x[]*mu(ff1, ff2, 0, Tf);
+#endif
         }
     }
 }

@@ -172,19 +172,11 @@ event init (i = 0)
         src_T[] = 0;
     }
     boundary({src_T});
-    if (viscDissipation && (i > 1000)){
-        dissipation (dis=src_T, u=u, mu=mu, dump_dis=true);
-    }
     // Compute source term for degree of cure
     foreach(){
         src_alpha_doc[] = KT(T[]) * FR(alpha_doc[]);
 #if REACTION_MODEL != NO_REACTION_MODEL
         src_T[] += rho1 * Htr * f[] * (1 - fs[]) * src_alpha_doc[];
-#endif
-
-#if T_DIRICHLET_BC == 1 // indicator TODO: maybe no need to include?
-        // Penalization term
-        src_T[] -= rhoCpv[] * fs[] * (T[] - T_target[])/etaT;
 #endif
     }
     boundary({src_T, src_alpha_doc});

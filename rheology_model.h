@@ -109,19 +109,19 @@ double Ea_by_R = 5; // Kelvin
 #if REACTION_MODEL == REACTION_MODEL_N_ORDER_AUTOCATALYTIC
     double K_cat = 1;
     double n_degree = 1.667;
-    #define FR(alpha_doc) ( pow(1 - alpha_doc, n_degree)*(1 + K_cat*alpha_doc) )
-    #define dFR_dalpha(alpha_doc) ( pow(1 - alpha_doc, n_degree)*( -n_degree/(1 - alpha_doc) + K_cat) )
+    #define FR(alpha_doc) ( pow(max(1 - alpha_doc, 0), n_degree)*(1 + K_cat*alpha_doc) )
+    #define dFR_dalpha(alpha_doc) ( pow(max(1 - alpha_doc, 0), n_degree)*( -n_degree/(max(1 - alpha_doc, 1e-10)) + K_cat) )
     #define GENERAL_METHOD 1
 #elif REACTION_MODEL == REACTION_MODEL_PROUT_TOMPKINS_AUTOCATALYTIC
     double n_degree = 1.667;
     double m_degree = 0.333;
-    #define FR(alpha_doc) ( pow(1 - alpha_doc, n_degree)*pow(alpha_doc, m_degree) )
-    #define dFR_dalpha(alpha_doc) ( FR(alpha_doc) * ( -n_degree/(1 - alpha_doc) + m_degree/alpha_doc) )
+    #define FR(alpha_doc) ( pow(max(1 - alpha_doc, 0), n_degree)*pow(alpha_doc, m_degree) )
+    #define dFR_dalpha(alpha_doc) ( FR(alpha_doc) * ( -n_degree/(max(1 - alpha_doc, 1e-10)) + m_degree/alpha_doc) )
     #define GENERAL_METHOD 1
 #else //REACTION_MODEL_NON_AUTOCATALYTIC
     double n_degree = 1.667;
-    #define FR(alpha_doc) ( pow(1 - alpha_doc, n_degree) )
-    #define dFR_dalpha(alpha_doc) ( -n_degree * pow(1 - alpha_doc, n_degree - 1) )
+    #define FR(alpha_doc) ( pow(max(1 - alpha_doc, 0), n_degree) )
+    #define dFR_dalpha(alpha_doc) ( -n_degree * pow(max(1 - alpha_doc, 0), n_degree - 1) )
     #define GENERAL_METHOD 0
 #endif
 
@@ -151,8 +151,10 @@ void set_heat_penalization_parameters(double new_m_bp, double new_eta_T, double 
     }
 }
 
-void update_T_target(scalar levelset, scalar T_target, double cfl, int nmax){
-    linear_extrapolation (f=T_target, ls=levelset, cfl=cfl, nmax=nmax);
+void update_T_target(scalar levelset, scalar T_target, scalar fs, double T_solid, double cfl, int nmax){
+    linear_extrapolation_constant_surface_value (
+        f=T_target, ls=levelset, c=fs, f_solid=T_solid, cfl=cfl, nmax=nmax, nl=0, inverse=1
+    );
 }
 
 /**

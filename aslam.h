@@ -63,7 +63,8 @@ void constant_extrapolation (
   (const) scalar s = {-1},    // source term, default zero
   (const) scalar c = {-1},    // vof field, optional
   int nl = 0,                 // from which layer of cells (optional, min=0, max=2)
-  int nointerface = 0         // remove the interface from the heaviside (default false)
+  int nointerface = 0,        // remove the interface from the heaviside (default false)
+  int inverse = 0             // the vof field if = 1 if gas (default false)
 )
 {
   scalar H[];
@@ -89,7 +90,7 @@ void constant_extrapolation (
   it can be set to 1 or 2. */
 
   if (c.i > 0)
-    mapregion (H, c, nl=nl, nointerface=nointerface);
+    mapregion (H, c, nl=nl, nointerface=nointerface, inverse=inverse);
   else
     foreach()
       H[] = (ls[] <= 0.) ? 0. : 1.;
@@ -178,7 +179,8 @@ void linear_extrapolation (
   (const) scalar s = {-1},    // source term, default zero
   (const) scalar c = {-1},    // vof field, optional
   int nl = 0,                 // from which layer of cells (optional, min=0, max=2)
-  int nointerface = 0         // remove the interface from the heaviside (default false)
+  int nointerface = 0,        // remove the interface from the heaviside (default false)
+  int inverse = 0             // the vof field if = 1 if gas (default false)
 )
 {
   scalar H[], fn[];
@@ -206,7 +208,7 @@ void linear_extrapolation (
 
   if (c.i > 0)
     mapregion (H, c, nl = (nl == 0.) ? 1. : min (nl+1, 2),
-        nointerface=nointerface);
+        nointerface=nointerface, inverse=inverse);
   else
     foreach()
       H[] = (ls[]+Delta <= 0.) ? 0. : 1.;
@@ -221,7 +223,7 @@ void linear_extrapolation (
   }
 
   /**
-  We compute the directional derviative *fn*. */
+  We compute the directional derivative *fn*. */
 
   foreach()
     foreach_dimension()
@@ -264,6 +266,153 @@ void linear_extrapolation (
     constant_extrapolation (f, ls, cfl, nmax, fn, c, nl, nointerface);
   else
     constant_extrapolation (f, ls, cfl, nmax, fn);
+}
+
+/**
+## Linear Extrapolation with constant value on surface
+
+The linear extrapolation of the field *f* along the normal
+direction, can be achieved from the solution of the
+following PDE:
+
+$$
+\dfrac{\partial f}{\partial t}
++ H(\phi)\left(\hat{\mathbf{n}}\cdot\nabla f - f_n \right) = 0
+$$
+
+Which is similar to the equation resolved with the constant
+extrapolation procedure, except for the source term $f_n$,
+which is the directional derivative of $f$ in the normal
+direction, defined as:
+
+$$
+f_n = \hat{\mathbf{n}}\cdot \nabla f
+$$
+
+Since this function is defined only in the region where $f$
+is defined, we apply the constant extrapolation in order to
+obtain a field $f_n$ defined on the whole domain:
+
+$$
+\dfrac{\partial f_n}{\partial t}
++ H(\phi)\hat{\mathbf{n}}\cdot\nabla f_n = 0
+$$
+
+Therefore, the linear interpolation requires the solution of
+two different extrapolation PDEs, and the same logic applies
+if higher order extrapolations have to be solved.
+*/
+
+void linear_extrapolation_constant_surface_value (
+    scalar f,                   // field to extrapolate
+    scalar ls,                  // level set field
+    double f_solid,             // value on interface
+    double cfl,                 // CFL number
+    int nmax,                   // number of maximum time steps
+    (const) scalar s = {-1},    // source term, default zero
+    (const) scalar c = {-1},    // vof field, optional
+    int nl = 0,                 // from which layer of cells (optional, min=0, max=2)
+    int nointerface = 0,        // remove the interface from the heaviside (default false)
+    int inverse = 0             // the vof field if = 1 if gas (default false)
+)
+{
+    scalar H[], fn[];
+    vector n[], gf[];
+    
+    if (s.i < 0)
+        s = zeroc;
+
+    /**
+    We compute the gradients of the level set for
+    the calculation of the interface normals, and the
+    gradient of *f* for the calculation of the directional
+    derivative. */
+
+    gradients ({ls, f}, {n, gf});
+
+    /**
+    We set f_solid on the interface. */
+    foreach() {
+        f[] = f_solid;
+        if (c[] > F_ERR && c[] < 1.-F_ERR) {
+            double nscalargf = 0.;
+            foreach_dimension()
+            nscalargf += gf.x[]*Delta*(c[] - 0.5)*n.x[];
+            f[] += nscalargf;
+        }
+    }
+    boundary({f});
+
+    /**
+    We compute the normals and the heaviside function H,
+    which is non-null in the region where the field must
+    be extrapolated. In case of vof field, the user can
+    decide to extrapolate the field from a layer of cells
+    which in not adjacent to the interface. This can be
+    specified setting the variables *nl*, 0 by default,
+    it can be set to 1 or 2. */
+
+    if (c.i > 0)
+        mapregion (H, c, nl = (nl == 0.) ? 1. : min (nl+1, 2), nointerface=0, inverse=inverse);
+    else
+        foreach()
+            H[] = (ls[]+Delta <= 0.) ? 0. : 1.;
+
+    foreach() {
+        double maggf = 0.;
+        foreach_dimension()
+            maggf += sq (n.x[]);
+        maggf = sqrt (maggf);
+        foreach_dimension()
+            n.x[] /= (maggf + 1.e-10);
+    }
+
+    /**
+    We compute the directional derivative *fn*. */
+
+    foreach() {
+        fn[] = 0;
+        foreach_dimension()
+            fn[] += n.x[] * gf.x[];
+    }
+    /**
+    We solve the constant extrapolation for extending
+    the directional derivative. */
+
+    int ts = 0;
+
+    while (ts < nmax) {
+
+        /**
+        The gradients of the extrapolated functions are updated
+        using an upwind scheme. */
+
+        foreach()
+            foreach_dimension()
+                gf.x[] = (n.x[] <= 0.) ? (fn[1] - fn[]) / Delta : (fn[] - fn[-1]) / Delta;
+
+        /**
+        We solve a single step of the PDE. */
+
+        foreach() {
+            double dt = cfl*Delta;
+            double nscalargf = 0.;
+            foreach_dimension()
+            nscalargf += n.x[]*gf.x[];
+            fn[] -= dt*H[]*(nscalargf - s[]);
+        }
+        ts++;
+    }
+
+    /**
+    We solve a constant extrapolation with source equal to
+    the directional derivative.
+    Here we don't modify interface values, therefore `nointerface=1`. */
+
+    if (c.i > 0)
+        constant_extrapolation (f, ls, cfl, nmax, fn, c, nl, nointerface=1, inverse=inverse);
+    else
+        constant_extrapolation (f, ls, cfl, nmax, fn, inverse=inverse);
 }
 
 /**

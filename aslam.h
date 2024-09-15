@@ -331,14 +331,30 @@ void linear_extrapolation_constant_surface_value (
     gradients ({ls, f}, {n, gf});
 
     /**
+     We compute normal *n*. */
+    foreach() {
+        double maggf = 0.;
+        foreach_dimension()
+        maggf += sq (n.x[]);
+        maggf = sqrt (maggf);
+        foreach_dimension()
+        n.x[] /= (maggf + 1.e-10);
+    }
+
+    /**
+    We compute the directional derivative *fn*. */
+
+    foreach() {
+        fn[] = 0;
+        foreach_dimension()
+        fn[] += n.x[] * gf.x[];
+    }
+
+    /**
     We set f_solid on the interface. */
     foreach() {
-        f[] = f_solid;
         if (c[] > F_ERR && c[] < 1.-F_ERR) {
-            double nscalargf = 0.;
-            foreach_dimension()
-            nscalargf += gf.x[]*Delta*(c[] - 0.5)*n.x[];
-            f[] += nscalargf;
+            f[] = f_solid + Delta*(c[] - 0.5)*fn[];
         }
     }
     boundary({f});
@@ -358,23 +374,6 @@ void linear_extrapolation_constant_surface_value (
         foreach()
             H[] = (ls[]+Delta <= 0.) ? 0. : 1.;
 
-    foreach() {
-        double maggf = 0.;
-        foreach_dimension()
-            maggf += sq (n.x[]);
-        maggf = sqrt (maggf);
-        foreach_dimension()
-            n.x[] /= (maggf + 1.e-10);
-    }
-
-    /**
-    We compute the directional derivative *fn*. */
-
-    foreach() {
-        fn[] = 0;
-        foreach_dimension()
-            fn[] += n.x[] * gf.x[];
-    }
     /**
     We solve the constant extrapolation for extending
     the directional derivative. */

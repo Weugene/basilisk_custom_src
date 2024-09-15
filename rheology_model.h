@@ -143,7 +143,7 @@ void set_heat_penalization_parameters(double new_m_bp, double new_eta_T, double 
         fprintf(
                 ferr,
                 "Brinkman penalization params for the heat equation: etaT=%g, mbpT=%g, minDelta=%g chi_conductivity=%g\n",
-                etaT, mbpT, mindelta, chi_conductivity
+                etaT, mbpT, mindelta, new_chi_conductivity
         );
     }else{
         etaT = 1e+15;

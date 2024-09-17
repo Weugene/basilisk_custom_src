@@ -445,11 +445,11 @@ mgstats poisson (scalar a, scalar b,
   provide $\alpha$ and $\beta$ as constant fields. */
 
   if (alpha.x.i < 0)
-    alpha = unityf;
-  if (lambda.i < 0) {
-    const scalar zeroc[] = 0.; // fixme
-    lambda = zeroc;
-  }
+    alpha[] = {1.,1.,1.};
+  if (lambda.i < 0)
+    lambda[] = 0.;
+
+
 
   /**
   We need $\alpha$ and $\lambda$ on all levels of the grid. */
@@ -543,10 +543,10 @@ mgstats project (face vector uf, scalar p,
     Given the scaling of the divergence above, this gives */
 // res=div(u + u*)/dt - laplace p
 // res=div(u*)/dt - laplace delta p ~ dt
-    mgstats mgp = poisson (p, div , alpha,
-                   tolerance = TOLERANCE_P, nrelax = nrelax);
-//        mgstats mgp = poisson (p, div, alpha,
-//                   tolerance = TOLERANCE_P/sq(dt), nrelax = nrelax);
+//    mgstats mgp = poisson (p, div , alpha,
+//                   tolerance = TOLERANCE_P, nrelax = nrelax);
+        mgstats mgp = poisson (p, div, alpha,
+                   tolerance = TOLERANCE_P/sq(dt), nrelax = nrelax);
 
     /**
     And compute $\mathbf{u}_f^{n+1}$ using $\mathbf{u}_f$ and $p$. */

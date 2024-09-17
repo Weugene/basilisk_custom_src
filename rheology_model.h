@@ -151,9 +151,23 @@ void set_heat_penalization_parameters(double new_m_bp, double new_eta_T, double 
     }
 }
 
-void update_T_target(scalar levelset, scalar T_target, scalar fs, double T_solid, double cfl, int nmax){
+void update_T_target(scalar levelset, scalar T_target, scalar fss, scalar fs, double T_solid, double cfl, int nmax){
     linear_extrapolation_constant_surface_value (
-        f=T_target, ls=levelset, c=fs, f_solid=T_solid, cfl=cfl, nmax=nmax, nl=0, inverse=1
+        f=T_target, ls=levelset, c=fss, fs=fs, f_solid=T_solid, cfl=cfl, nmax=nmax, nl=0, inverse=1
+    );
+}
+
+void update_targets(
+    scalar levelset,
+    scalar* targets,
+    scalar fss,
+    scalar fs,
+    solid_function * target_fun,
+    double cfl,
+    int nmax
+){
+    linear_extrapolate_fields (
+        fields=targets, ls=levelset, c=fss, fs=fs, f_solid_fun_list=target_fun, cfl=cfl, nmax=nmax, nl=0, inverse=1
     );
 }
 

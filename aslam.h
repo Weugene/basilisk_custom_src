@@ -419,7 +419,7 @@ void linear_extrapolation_constant_surface_value (
 
 // Define a type for a function pointer that takes coordinates and returns a value
 typedef double (*solid_function)(double x, double y, double z);
-const scalar src_zero[] = 0;
+const scalar src_zero = {-1};
 
 void linear_extrapolate_fields (
     scalar * fields,                    // array of fields to extrapolate

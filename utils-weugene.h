@@ -4,7 +4,7 @@
 #endif
 
 void MinMaxValues(scalar * list, double * arr_eps) {// for each scalar min and max
-    double arr[10][2], small_val = 1e-10;
+    double arr[20][2], small_val = 1e-10;
     int ilist = 0;
     for (scalar s in list) {
         double mina= HUGE, maxa= -HUGE;

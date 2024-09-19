@@ -71,12 +71,12 @@ struct Brinkman {
 };
 
 
-double give_etas(double m_bp, double mindelta, double nu_min){
-    return sq(m_bp * mindelta) / nu_min;
+double give_etas(double m_bp, double mindelta, double nu_max){
+    return sq(m_bp * mindelta) / nu_max;
 }
 
-double give_mbp(double eta_s, double mindelta, double nu_min){
-    return sqrt(eta_s * nu_min) / mindelta;
+double give_mbp(double eta_s, double mindelta, double nu_max){
+    return sqrt(eta_s * nu_max) / mindelta;
 }
 
 /**
@@ -89,27 +89,27 @@ double give_mbp(double eta_s, double mindelta, double nu_min){
 void set_penalization_parameters (face vector mu, scalar rho, double new_m_bp, double new_eta_s){
     int maxlevel = grid->maxdepth;
     double mindelta = L0 / (1 << maxlevel);
-    double nu_min = 1e+10;
-    foreach( reduction(min:nu_min) ){
+    double nu_max = 1e+10;
+    foreach( reduction(max:nu_max) ){
         double nu = norm(mu) / rho[];
-        if (nu < nu_min) nu_min = nu;
+        if (nu > nu_max) nu_max = nu;
     }
 
-    if (nu_min > SEPS) {
+    if (nu_max > SEPS) {
         if (fabs(new_m_bp) > 0) { // m_bp has higher priority
             m_bp = new_m_bp;
-            eta_s = give_etas(m_bp, mindelta, nu_min);
+            eta_s = give_etas(m_bp, mindelta, nu_max);
         } else if (fabs(new_m_bp) == 0 && fabs(eta_s) < SEPS) { // nothing is set, m_bp = 1, eta_s(m_bp)
             m_bp = 1;
-            eta_s = give_etas(m_bp, mindelta, nu_min);
+            eta_s = give_etas(m_bp, mindelta, nu_max);
         } else { // only eta is set
             eta_s = new_eta_s;
-            m_bp = give_mbp(eta_s, mindelta, nu_min);
+            m_bp = give_mbp(eta_s, mindelta, nu_max);
         }
         fprintf(
             ferr,
-            "Brinkman penalization params for u: eta_s=%g, m_bp=%g, minDelta=%g, nu_min=%g\n",
-            eta_s, m_bp, mindelta, nu_min
+            "Brinkman penalization params for u: eta_s=%g, m_bp=%g, minDelta=%g, nu_max=%g\n",
+            eta_s, m_bp, mindelta, nu_max
         );
     }
 }

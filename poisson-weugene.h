@@ -223,7 +223,7 @@ mgstats mg_solve (scalar * a, scalar * b,
 	  double res_rel = fabs(res1 - res2)/(res2 + 1e-30);
       if (s.i == 2 && fabs(s.resa) < 1e-30) break;
       if( res_rel < RELATIVE_RES_TOLERANCE && patient > 3){
-          scalar v = p.a[0];
+          scalar v = a[0];
           fprintf (ferr,
              "WARNING: Relative residual did not reach convergence for %s after %d iterations\n"
              "  rel_res: %g res: %g prev_res: %g %g sum: %g nrelax: %d\n",

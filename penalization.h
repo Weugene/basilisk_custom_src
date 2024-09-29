@@ -86,13 +86,16 @@ double give_mbp(double eta_s, double mindelta, double nu_max){
  * the penalization coefficient eta_s, and the penalization parameter m_bp - the number of mesh cells
  * used to resolve the Brinkman penalization layer $\sqrt{\eta_s \nu}$.
  */
-void set_penalization_parameters (face vector mu, scalar rho, double new_m_bp, double new_eta_s){
+void set_penalization_parameters (face vector mu, scalar rho, scalar fs, double new_m_bp, double new_eta_s){
     int maxlevel = grid->maxdepth;
     double mindelta = L0 / (1 << maxlevel);
     double nu_max = 0;
     foreach( reduction(max:nu_max) ){
-        double nu = norm(mu) / rho[];
-        if (nu > nu_max) nu_max = nu;
+        // find $\nu_{\max}$ only in solid interface
+        if (fs[] > SEPS && fs[] < 1 - SEPS){
+            double nu = norm(mu) / rho[];
+            if (nu > nu_max) nu_max = nu;
+        }
     }
 
     if (nu_max > SEPS) {

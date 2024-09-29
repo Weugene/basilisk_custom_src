@@ -89,7 +89,7 @@ double give_mbp(double eta_s, double mindelta, double nu_max){
 void set_penalization_parameters (face vector mu, scalar rho, double new_m_bp, double new_eta_s){
     int maxlevel = grid->maxdepth;
     double mindelta = L0 / (1 << maxlevel);
-    double nu_max = 1e+10;
+    double nu_max = 0;
     foreach( reduction(max:nu_max) ){
         double nu = norm(mu) / rho[];
         if (nu > nu_max) nu_max = nu;
